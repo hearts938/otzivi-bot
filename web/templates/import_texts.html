@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% block title %}Импорт отзывов{% endblock %}
+{% block body %}
+<h1>Импорт текстов из Excel</h1>
+<p>Загрузите файл <strong>.xlsx</strong> по шаблону. Та же логика, что в боте: Модерация → Импорт Excel.</p>
+
+{% if msg %}
+<div class="alert alert-ok">{{ msg }}</div>
+{% endif %}
+{% if err %}
+<div class="alert alert-err">{{ err }}</div>
+{% endif %}
+{% if warnings %}
+<div class="alert alert-warn">
+  <strong>Предупреждения:</strong>
+  <ul>
+    {% for w in warnings %}
+    <li>{{ w }}</li>
+    {% endfor %}
+  </ul>
+</div>
+{% endif %}
+
+<div class="upload-box">
+  <form method="post" action="/import" enctype="multipart/form-data">
+    <label class="upload-label">
+      <span class="upload-title">Выберите файл .xlsx</span>
+      <span class="upload-hint">или перетащите в поле ниже (поддерживается выбор файла)</span>
+      <input type="file" name="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" required/>
+    </label>
+    <button type="submit" class="btn-primary">Загрузить и импортировать</button>
+  </form>
+</div>
+
+<section class="help-block">
+  <h2>Колонки в первой строке</h2>
+  <table>
+    <tr><th>Колонка</th><th>Описание</th></tr>
+    <tr><td>Номер</td><td>Номер текста в пуле заказчика</td></tr>
+    <tr><td>Заказчик</td><td>Имя (опционально; иначе создаётся по ссылке)</td></tr>
+    <tr><td>Ссылка</td><td>Ссылка на место/заведение (одна ссылка = один заказчик)</td></tr>
+    <tr><td>Оплата / Вознаграждение</td><td>Сумма в ₽ за один одобренный отзыв (опционально)</td></tr>
+    <tr><td>Пол</td><td><code>М</code> или <code>Ж</code> — кому показывать текст после опроса</td></tr>
+    <tr><td>Текст</td><td>Готовый текст отзыва</td></tr>
+    <tr><td>Дата публикации</td><td>День, с <strong>00:00</strong> ({{ timezone }}) текст станет доступен в боте</td></tr>
+  </table>
+</section>
+{% endblock %}

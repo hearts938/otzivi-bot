@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% block title %}Управление{% endblock %}
+{% block body %}
+<h1>Управление пользователями</h1>
+<ul>
+  {% for u in users %}
+  <li>
+    <a href="/users/manage/{{ u.id }}">
+      @{{ u.username or u.telegram_id }} — tg {{ u.telegram_id }} —
+      {% if u.is_banned %}забанен{% else %}активен{% endif %}
+    </a>
+  </li>
+  {% endfor %}
+</ul>
+{% endblock %}

@@ -1,0 +1,8 @@
+# Только Telegram-бот (без сайта). На сервере: pip install -r requirements-bot.txt
+aiogram==3.15.0
+sqlalchemy[asyncio]==2.0.36
+aiosqlite==0.20.0
+python-dotenv==1.0.1
+pandas==2.2.3
+openpyxl==3.1.5
+# Payments API client uses Python stdlib urllib (extra deps not required)

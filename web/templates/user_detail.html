@@ -1,0 +1,10 @@
+{% extends "base.html" %}
+{% block title %}Пользователь{% endblock %}
+{% block body %}
+<h1>Пользователь</h1>
+<pre>{{ text }}</pre>
+<form method="post" action="/users/manage/{{ uid }}/ban">
+  <button type="submit">{% if banned %}Разбанить{% else %}Забанить{% endif %}</button>
+</form>
+<p><a href="/users/manage">Назад</a></p>
+{% endblock %}

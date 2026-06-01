@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% block title %}Заказчики{% endblock %}
+{% block body %}
+<h1>Заказчики</h1>
+<h2>Создать заказчика</h2>
+<form method="post" action="/tasks/add">
+  <div><label>Имя заказчика <input name="customer_name" required/></label></div>
+  <div><label>Ссылка на место/проект <input name="link" required placeholder="https://..."/></label></div>
+  <div><label>Платформа
+    <select name="platform_id">
+      {% for p in platforms %}
+      <option value="{{ p.id }}">{{ p.name }}</option>
+      {% endfor %}
+    </select>
+  </label></div>
+  <div><label>Оплата за отзыв (₽) <input name="reward" type="number" step="0.01" min="0" value="0" required/></label></div>
+  <div><label>Регион <input name="region" placeholder="Москва или пусто = любой"/></label></div>
+  <button type="submit">Создать</button>
+</form>
+{% if err %}<p class="alert-err">{{ err }}</p>{% endif %}
+<h2>Список</h2>
+<ul>
+  {% for t in tasks %}
+  <li>
+    <a href="/tasks/{{ t.id }}">{{ t.customer_name or t.title }}</a>
+    {% if t.region %}<em>({{ t.region }})</em>{% endif %}
+    — {{ t.link[:50] }}…
+    <form method="post" action="/tasks/{{ t.id }}/reward" style="display:inline;margin-left:0.5rem">
+      <label>₽ <input name="reward" type="number" step="0.01" min="0" value="{{ '%.2f'|format(t.reward or 0) }}" style="width:90px"/></label>
+      <button type="submit">OK</button>
+    </form>
+  </li>
+  {% endfor %}
+</ul>
+{% endblock %}

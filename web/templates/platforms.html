@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% block title %}Платформы{% endblock %}
+{% block body %}
+<h1>Платформы</h1>
+<h2>Добавить</h2>
+<form method="post" action="/platforms/add">
+  <div><label>Название <input name="name" required/></label></div>
+  <div><label>Slug <input name="slug" required/></label></div>
+  <div><label>Кулдаун (сек) <input name="cd" type="number" value="3600"/></label></div>
+  <button type="submit">Добавить</button>
+</form>
+<h2>Список</h2>
+<table>
+  <tr><th>id</th><th>name</th><th>slug</th><th>cd</th><th></th></tr>
+  {% for p in platforms %}
+  <tr>
+    <td>{{ p.id }}</td>
+    <td>{{ p.name }}</td>
+    <td>{{ p.slug }}</td>
+    <td>
+      <form method="post" action="/platforms/{{ p.id }}/cd" style="display:inline">
+        <input type="number" name="seconds" value="{{ p.cooldown_seconds }}" style="width:90px"/>
+        <button type="submit">OK</button>
+      </form>
+    </td>
+    <td>
+      {% if p.slug != 'default' %}
+      <form method="post" action="/platforms/{{ p.id }}/delete" onsubmit="return confirm('Удалить?');" style="display:inline">
+        <button type="submit">Удалить</button>
+      </form>
+      {% endif %}
+    </td>
+  </tr>
+  {% endfor %}
+</table>
+{% endblock %}

@@ -1,0 +1,16 @@
+[Unit]
+Description=Review bot — web admin (FastAPI)
+After=network.target
+
+[Service]
+Type=simple
+User=www-data
+Group=www-data
+WorkingDirectory=/opt/pythonboteng
+EnvironmentFile=/opt/pythonboteng/.env
+ExecStart=/opt/pythonboteng/venv/bin/python run_web.py
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

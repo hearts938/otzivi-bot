@@ -1,0 +1,70 @@
+{% extends "base.html" %}
+{% block title %}{{ task.customer_name or task.title }}{% endblock %}
+{% block body %}
+<h1>{{ task.customer_name or task.title }}</h1>
+<p><b>Ссылка:</b> <a href="{{ task.link }}" target="_blank">{{ task.link }}</a></p>
+<p>Платформа: {{ task.platform.name if task.platform else '—' }}, регион: <b>{{ task.region or 'любой' }}</b></p>
+
+<h2>Оплата за отзыв</h2>
+<form method="post" action="/tasks/{{ task.id }}/reward">
+  <label>Сумма (₽)
+    <input name="reward" type="number" step="0.01" min="0" value="{{ '%.2f'|format(task.reward or 0) }}" required style="width:120px"/>
+  </label>
+  <button type="submit">Сохранить оплату</button>
+</form>
+
+{% if msg %}<div class="alert alert-ok">{{ msg }}</div>{% endif %}
+{% if err %}<div class="alert alert-err">{{ err }}</div>{% endif %}
+
+<h2>Пул текстов</h2>
+<h3>Активные (ещё не взяты)</h3>
+{% if active %}
+<ol>
+  {% for ln in active %}
+  <li><b>{{ ln.number }}.</b> [{{ ln.gender_label }}] {{ ln.preview }} — <em>{{ ln.status_label }}</em></li>
+  {% endfor %}
+</ol>
+{% else %}<p>— нет —</p>{% endif %}
+
+<h3>Ожидают публикации</h3>
+{% if waiting %}
+<ol>
+  {% for ln in waiting %}
+  <li><b>{{ ln.number }}.</b> [{{ ln.gender_label }}] {{ ln.preview }} — <em>{{ ln.status_label }}</em></li>
+  {% endfor %}
+</ol>
+{% else %}<p>— нет —</p>{% endif %}
+
+{% if taken %}
+<h3>Уже взяты</h3>
+<ol>
+  {% for ln in taken %}
+  <li><b>{{ ln.number }}.</b> [{{ ln.gender_label }}] {{ ln.preview }} — {{ ln.status_label }}</li>
+  {% endfor %}
+</ol>
+{% endif %}
+
+<h3>Добавить текст в пул</h3>
+<form method="post" action="/tasks/{{ task.id }}/texts">
+  <div><label>Пол
+    <select name="gender" required>
+      <option value="male">М</option>
+      <option value="female">Ж</option>
+    </select>
+  </label></div>
+  <div><label>Текст<br/><textarea name="body" rows="4" cols="60" required></textarea></label></div>
+  <div><label>Дата публикации (ДД.ММ.ГГГГ) или «сейчас» <input name="publish_date" placeholder="сейчас"/></label></div>
+  <button type="submit">Добавить (номер назначится автоматически)</button>
+</form>
+
+<h3>Удалить текст</h3>
+<form method="post" action="/tasks/{{ task.id }}/texts/delete">
+  <label>Номера через запятую: <input name="numbers" placeholder="2, 3" style="width:200px"/></label>
+  <button type="submit">Удалить указанные</button>
+</form>
+
+<form method="post" action="/tasks/{{ task.id }}/delete" onsubmit="return confirm('Удалить заказчика и все тексты?');" style="margin-top:2rem">
+  <button type="submit">Удалить заказчика</button>
+</form>
+<p><a href="/tasks">Назад</a> · <a href="/import">Импорт Excel</a></p>
+{% endblock %}

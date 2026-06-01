@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+{% block title %}{{ name }}{% endblock %}
+{% block body %}
+<h1>{{ name }}</h1>
+<p><b>Всё время:</b> выполнено {{ snap.completed_all }}, стоимость {{ "%.2f"|format(snap.cost_all) }}</p>
+<p><b>Сегодня:</b> выполнено {{ snap.completed_today }}, стоимость {{ "%.2f"|format(snap.cost_today) }}</p>
+<h3>Топ-5 (всё время)</h3>
+<ol>
+  {% for tg, un, amt, cnt in snap.top5 %}
+  <li>tg {{ tg }} @{{ un or '-' }} — {{ "%.2f"|format(amt) }} ({{ cnt }})</li>
+  {% endfor %}
+</ol>
+<p><a href="/finance">Назад</a></p>
+{% endblock %}

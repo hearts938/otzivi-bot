@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% block title %}Пользователи{% endblock %}
+{% block body %}
+<h1>Пользователи</h1>
+<table>
+  <tr><th>username</th><th>tg id</th><th>баланс</th><th>заданий</th></tr>
+  {% for row in rows %}
+  <tr>
+    <td>{{ row.username }}</td>
+    <td>{{ row.tg }}</td>
+    <td>{{ "%.2f"|format(row.balance) }}</td>
+    <td>{{ row.done }}</td>
+  </tr>
+  {% endfor %}
+</table>
+{% endblock %}

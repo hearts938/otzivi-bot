@@ -1,0 +1,10 @@
+{% extends "base.html" %}
+{% block title %}Финансы{% endblock %}
+{% block body %}
+<h1>Платформы</h1>
+<ul>
+  {% for p in platforms %}
+  <li><a href="/finance/{{ p.id }}">{{ p.name }}</a> (slug {{ p.slug }})</li>
+  {% endfor %}
+</ul>
+{% endblock %}

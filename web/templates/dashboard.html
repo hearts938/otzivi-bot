@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% block title %}Панель{% endblock %}
+{% block body %}
+<h1>Админ-панель</h1>
+<p>Те же функции, что и в Telegram-боте (/admin).</p>
+<ul>
+  <li><a href="/users">1) Пользователи (сводка)</a></li>
+  <li><a href="/users/manage">2) Управление пользователями</a></li>
+  <li><a href="/broadcast">3) Рассылка</a></li>
+  <li><a href="/finance">4) Финансовая панель</a></li>
+  <li><a href="/balance">5) Управление балансом</a></li>
+  <li><a href="/stars">6) Курс звёзд</a></li>
+  <li><a href="/outreach">7) Обращение от бота</a></li>
+  <li><a href="/platforms">8–10) Платформы / кулдауны / удаление</a></li>
+  <li><a href="/tasks">11) Заказчики и пул текстов</a></li>
+  <li><a href="/import"><strong>Импорт отзывов (Excel)</strong></a> — загрузка по шаблону</li>
+</ul>
+{% endblock %}

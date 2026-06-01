@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8"/>
+  <title>{% block title %}Админ{% endblock %}</title>
+  <link rel="stylesheet" href="/static/style.css"/>
+</head>
+<body>
+{% if request.session.get('admin') %}
+<nav>
+  <a href="/">Главная</a>
+  <a href="/users">Пользователи</a>
+  <a href="/users/manage">Управление</a>
+  <a href="/broadcast">Рассылка</a>
+  <a href="/finance">Финансы</a>
+  <a href="/balance">Баланс</a>
+  <a href="/stars">Звёзды</a>
+  <a href="/outreach">Обращение</a>
+  <a href="/platforms">Платформы</a>
+  <a href="/tasks">Заказчики</a>
+  <a href="/import">Импорт Excel</a>
+  <a href="/logout">Выход</a>
+</nav>
+<hr/>
+{% endif %}
+{% block body %}{% endblock %}
+</body>
+</html>

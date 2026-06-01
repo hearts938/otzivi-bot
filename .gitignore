@@ -1,0 +1,41 @@
+# Секреты и локальная конфигурация
+.env
+.env.local
+.env.*.local
+
+# База данных (на сервере — отдельный файл в data/)
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+data/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+.venv/
+env/
+ENV/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Логи и временные файлы
+*.log
+.cache/
+.pytest_cache/
+.mypy_cache/
+htmlcov/
+.coverage
