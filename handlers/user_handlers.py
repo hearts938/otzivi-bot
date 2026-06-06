@@ -63,6 +63,7 @@ from repo import (
     touch_activity,
     list_user_withdrawals,
     update_withdrawal_request_status,
+    reset_incomplete_ym_flow,
 )
 from handlers.admin.common import is_admin
 from repo import user_is_banned_now
@@ -133,6 +134,7 @@ async def _send_platform_list(
             first_name=message.from_user.first_name,
             last_name=message.from_user.last_name,
         )
+        await reset_incomplete_ym_flow(session, u.id)
         rows = await list_platforms_available_for_user(session, u.id, u.gender)
     if not rows:
         await message.answer(
@@ -225,6 +227,16 @@ async def msg_platform_pick(
         p = await session.get(Platform, pid)
         if p and is_yandex_maps_slug(p.slug):
             return
+        u = await ensure_user(
+            session,
+            message.from_user.id,
+            message.from_user.username,
+            referred_by_id=None,
+            first_name=message.from_user.first_name,
+            last_name=message.from_user.last_name,
+        )
+        await reset_incomplete_ym_flow(session, u.id)
+    await state.clear()
     await _send_customer_list(message, session_factory, state, pid)
 
 

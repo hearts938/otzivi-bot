@@ -21,7 +21,7 @@ from handlers.keyboards import (
     user_platforms_kb,
 )
 from handlers.menu_common import return_to_main_menu, send_main_menu
-from handlers.yandex_maps.filters import YandexPlatformPickFilter
+from handlers.yandex_maps.filters import ActiveYandexFlowFilter, YandexPlatformPickFilter
 from handlers.yandex_maps.keyboards import (
     BTN_YM_GET,
     BTN_YM_NO,
@@ -52,6 +52,7 @@ from repo import (
     release_ym_assignment,
     save_ym_session,
     start_ym_session,
+    task_platform_is_yandex,
     user_is_banned_now,
 )
 from services.yandex_maps import is_yandex_maps_slug
@@ -102,6 +103,14 @@ async def ym_platform_entry(
         if user_is_banned_now(u):
             await message.answer("Аккаунт заблокирован.")
             return
+        ym = await get_active_ym_session(session, u.id)
+        if ym and ym.step == "frozen":
+            await message.answer(
+                "Вы уже прошли тест по Яндекс Картам. "
+                "Дождитесь сообщения с текстом отзыва.",
+                reply_markup=user_main_kb(),
+            )
+            return
         cond = await get_yandex_conditions(session)
         await start_ym_session(session, u.id, "conditions")
         await state.update_data(ym_platform_id=pid)
@@ -112,7 +121,7 @@ async def ym_platform_entry(
     )
 
 
-@router.message(F.text == BTN_YM_GET)
+@router.message(F.text == BTN_YM_GET, ActiveYandexFlowFilter())
 async def ym_get_tasks(
     message: Message,
     session_factory: async_sessionmaker[AsyncSession],
@@ -133,9 +142,32 @@ async def ym_get_tasks(
             await message.answer("Аккаунт заблокирован.")
             return
         ym = await get_active_ym_session(session, u.id)
-        if ym:
-            ym.step = "gender"
+        if not ym or ym.step != "conditions":
+            await message.answer("Сначала выберите «Яндекс Карты» в списке сервисов.")
+            return
+        if u.gender in ("male", "female"):
+            acct = (u.platform_account_name or "").strip()
+            if len(acct) >= 2:
+                ym.step = "region"
+                await save_ym_session(session, ym)
+                await state.set_state(YandexMapsUserFSM.region)
+                await message.answer(
+                    f"{blockquote('Напишите ваш регион (город/область). Сначала выдаются задания из этого региона.')}",
+                    parse_mode="HTML",
+                    reply_markup=ym_conditions_kb(),
+                )
+                return
+            ym.step = "yandex_account"
             await save_ym_session(session, ym)
+            await state.set_state(YandexMapsUserFSM.yandex_account)
+            await message.answer(
+                "Имя аккаунта в <b>Яндекс ID</b> (как в профиле):",
+                parse_mode="HTML",
+                reply_markup=ym_conditions_kb(),
+            )
+            return
+        ym.step = "gender"
+        await save_ym_session(session, ym)
     await state.set_state(YandexMapsUserFSM.gender)
     await message.answer(
         f"🗺 <b>Яндекс Карты</b>\n\n{blockquote('Укажите ваш пол.')}",
@@ -144,7 +176,7 @@ async def ym_get_tasks(
     )
 
 
-@router.message(YandexMapsUserFSM.gender, F.text.in_({BTN_GENDER_M, BTN_GENDER_F}))
+@router.message(YandexMapsUserFSM.gender, F.text.in_({BTN_GENDER_M, BTN_GENDER_F}), ActiveYandexFlowFilter())
 async def ym_gender(
     message: Message,
     session_factory: async_sessionmaker[AsyncSession],
@@ -169,7 +201,7 @@ async def ym_gender(
     )
 
 
-@router.message(YandexMapsUserFSM.yandex_account, F.text)
+@router.message(YandexMapsUserFSM.yandex_account, F.text, ActiveYandexFlowFilter())
 async def ym_account(
     message: Message,
     session_factory: async_sessionmaker[AsyncSession],
@@ -206,7 +238,7 @@ async def ym_account(
     )
 
 
-@router.message(YandexMapsUserFSM.region, F.text)
+@router.message(YandexMapsUserFSM.region, F.text, ActiveYandexFlowFilter())
 async def ym_region(
     message: Message,
     session_factory: async_sessionmaker[AsyncSession],
@@ -281,7 +313,7 @@ async def _send_org_info(message: Message, session_factory: async_sessionmaker[A
     )
 
 
-@router.message(F.text.in_({BTN_YM_YES, BTN_YM_NO}))
+@router.message(F.text.in_({BTN_YM_YES, BTN_YM_NO}), ActiveYandexFlowFilter())
 async def ym_found(
     message: Message,
     session_factory: async_sessionmaker[AsyncSession],
@@ -295,7 +327,9 @@ async def ym_found(
             session, message.from_user.id, message.from_user.username, referred_by_id=None
         )
         ym = await get_active_ym_session(session, u.id)
-        if not ym or ym.step not in ("org", "assign_retry"):
+        if not ym or ym.step not in ("org", "assign_retry") or not ym.task_id:
+            return
+        if not await task_platform_is_yandex(session, ym.task_id):
             return
         if message.text == BTN_YM_NO:
             await release_ym_assignment(session, u.id, ym.task_text_id)
@@ -326,7 +360,7 @@ async def ym_found(
     )
 
 
-@router.message(YandexMapsUserFSM.website, F.text)
+@router.message(YandexMapsUserFSM.website, F.text, ActiveYandexFlowFilter())
 async def ym_website(
     message: Message,
     session_factory: async_sessionmaker[AsyncSession],
@@ -361,7 +395,7 @@ async def ym_website(
     )
 
 
-@router.message(F.text == BTN_YM_REFUSE)
+@router.message(F.text == BTN_YM_REFUSE, ActiveYandexFlowFilter())
 async def ym_quiz_refuse(
     message: Message,
     session_factory: async_sessionmaker[AsyncSession],
@@ -385,7 +419,7 @@ async def ym_quiz_refuse(
     )
 
 
-@router.message(F.text == BTN_YM_START)
+@router.message(F.text == BTN_YM_START, ActiveYandexFlowFilter())
 async def ym_quiz_start(
     message: Message,
     session_factory: async_sessionmaker[AsyncSession],
@@ -396,7 +430,9 @@ async def ym_quiz_start(
             session, message.from_user.id, message.from_user.username, referred_by_id=None
         )
         ym = await get_active_ym_session(session, u.id)
-        if not ym or not ym.task_id:
+        if not ym or ym.step != "quiz_intro" or not ym.task_id:
+            return
+        if not await task_platform_is_yandex(session, ym.task_id):
             return
         t = await get_task(session, ym.task_id)
         if not t:
@@ -410,6 +446,7 @@ async def ym_quiz_start(
         await save_ym_session(session, ym)
         q = questions[0]
         total = len(questions)
+    await state.set_state(YandexMapsUserFSM.quiz)
     await message.answer(
         f"<b>Вопрос 1 из {total}</b>\n\n{blockquote(q.body)}",
         parse_mode="HTML",
@@ -417,7 +454,7 @@ async def ym_quiz_start(
     )
 
 
-@router.message(F.text == BTN_YM_RESET)
+@router.message(F.text == BTN_YM_RESET, ActiveYandexFlowFilter())
 async def ym_reset(
     message: Message,
     session_factory: async_sessionmaker[AsyncSession],
@@ -455,7 +492,11 @@ async def ym_reset(
     await _send_org_info(message, session_factory, task.id)
 
 
-@router.message(F.text.in_({BTN_YM_Q_YES, BTN_YM_Q_NO}))
+@router.message(
+    YandexMapsUserFSM.quiz,
+    F.text.in_({BTN_YM_Q_YES, BTN_YM_Q_NO}),
+    ActiveYandexFlowFilter(),
+)
 async def ym_answer(
     message: Message,
     session_factory: async_sessionmaker[AsyncSession],
@@ -468,6 +509,8 @@ async def ym_answer(
         )
         ym = await get_active_ym_session(session, u.id)
         if not ym or ym.step != "question" or not ym.task_id:
+            return
+        if not await task_platform_is_yandex(session, ym.task_id):
             return
         t = await get_task(session, ym.task_id)
         questions = await list_yandex_questions_by_order(
@@ -491,6 +534,7 @@ async def ym_answer(
         ym.freeze_until = datetime.utcnow() + timedelta(hours=freeze_h)
         await save_ym_session(session, ym)
         reward = float(t.reward or 0) if t else 0.0
+    await state.set_state(None)
     await message.answer(
         f"✅ <b>Вы ответили на все вопросы</b>\n\n"
         f"{blockquote(f'Бот «заморожен» на {freeze_h} ч. '

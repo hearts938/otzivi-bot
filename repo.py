@@ -27,7 +27,7 @@ from database.models import (
     YandexMapsQuestion,
     YandexMapsSession,
 )
-from services.yandex_maps import parse_question_order
+from services.yandex_maps import is_yandex_maps_slug, parse_question_order
 from services.cooldown import compute_cooldown_until
 from services.cooldown import release_expired_cooldowns
 
@@ -507,6 +507,20 @@ async def get_yandex_conditions(session: AsyncSession) -> str:
     return (row.value if row else "").strip() or "Условия не заданы."
 
 
+INCOMPLETE_YM_STEPS = frozenset({
+    "conditions",
+    "gender",
+    "yandex_account",
+    "region",
+    "assign",
+    "org",
+    "assign_retry",
+    "website",
+    "quiz_intro",
+    "question",
+})
+
+
 async def get_active_ym_session(session: AsyncSession, user_id: int) -> YandexMapsSession | None:
     r = await session.execute(
         select(YandexMapsSession)
@@ -514,7 +528,21 @@ async def get_active_ym_session(session: AsyncSession, user_id: int) -> YandexMa
         .order_by(YandexMapsSession.id.desc())
         .limit(1)
     )
-    return r.scalar_one_or_none()
+    row = r.scalar_one_or_none()
+    if not row or row.review_sent_at or row.step == "done":
+        return None
+    return row
+
+
+async def task_platform_is_yandex(session: AsyncSession, task_id: int | None) -> bool:
+    if not task_id:
+        return False
+    t = await get_task(session, task_id)
+    if not t or not t.platform_id:
+        return False
+    p = await session.get(Platform, t.platform_id)
+    return p is not None and is_yandex_maps_slug(p.slug)
+
 
 
 async def clear_ym_session(session: AsyncSession, user_id: int) -> None:
@@ -662,6 +690,16 @@ async def release_ym_assignment(
             tt.taken_by_user_id = None
             tt.claimed_at = None
     await session.commit()
+
+
+async def reset_incomplete_ym_flow(session: AsyncSession, user_id: int) -> None:
+    """Сбросить незавершённый сценарий Яндекс Карт (не трогает «заморозку» с ожиданием текста)."""
+    ym = await get_active_ym_session(session, user_id)
+    if not ym or ym.step not in INCOMPLETE_YM_STEPS:
+        return
+    if ym.task_text_id:
+        await release_ym_assignment(session, user_id, ym.task_text_id)
+    await clear_ym_session(session, user_id)
 
 
 async def create_task(

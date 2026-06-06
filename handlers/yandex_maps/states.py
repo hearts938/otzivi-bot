@@ -6,3 +6,4 @@ class YandexMapsUserFSM(StatesGroup):
     yandex_account = State()
     region = State()
     website = State()
+    quiz = State()
