@@ -4,6 +4,7 @@ from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from database.models import AppSetting, Base, Platform, Task, YandexMapsQuestion
+from services.yandex_maps import YANDEX_QUIZ_DEFAULT_ORDER_KEY, default_question_order, format_question_order
 
 
 def _table_names(connection) -> set[str]:
@@ -126,20 +127,34 @@ async def seed_defaults(session_factory: async_sessionmaker[AsyncSession]) -> No
                     ),
                 )
             )
-        r_q = await session.execute(select(YandexMapsQuestion).limit(1))
-        if r_q.scalar_one_or_none() is None:
-            defaults = [
-                (1, 'В разделе «Часы работы» указаны часы открытия в 10:00? Ответьте Да или Нет.'),
-                (2, 'На странице организации есть фотографии? Ответьте Да или Нет.'),
-                (3, 'Указан номер телефона? Ответьте Да или Нет.'),
-                (4, 'Есть кнопка «Построить маршрут»? Ответьте Да или Нет.'),
-                (5, 'Указан адрес организации? Ответьте Да или Нет.'),
-                (6, 'Есть раздел с отзывами? Ответьте Да или Нет.'),
-                (7, 'Указана категория заведения? Ответьте Да или Нет.'),
-                (8, 'На карте отображается метка организации? Ответьте Да или Нет.'),
-                (9, 'Есть ссылка на сайт? Ответьте Да или Нет.'),
-                (10, 'Рейтинг организации отображается? Ответьте Да или Нет.'),
-            ]
-            for slot, body in defaults:
+        question_defaults = [
+            (1, 'В разделе «Часы работы» указаны часы открытия в 10:00? Ответьте Да или Нет.'),
+            (2, 'На странице организации есть фотографии? Ответьте Да или Нет.'),
+            (3, 'Указан номер телефона? Ответьте Да или Нет.'),
+            (4, 'Есть кнопка «Построить маршрут»? Ответьте Да или Нет.'),
+            (5, 'Указан адрес организации? Ответьте Да или Нет.'),
+            (6, 'Есть раздел с отзывами? Ответьте Да или Нет.'),
+            (7, 'Указана категория заведения? Ответьте Да или Нет.'),
+            (8, 'На карте отображается метка организации? Ответьте Да или Нет.'),
+            (9, 'Есть ссылка на сайт? Ответьте Да или Нет.'),
+            (10, 'Рейтинг организации отображается? Ответьте Да или Нет.'),
+            (11, 'Указаны способы оплаты? Ответьте Да или Нет.'),
+            (12, 'Есть описание услуг или меню? Ответьте Да или Нет.'),
+            (13, 'Отображается средняя оценка отзывов? Ответьте Да или Нет.'),
+            (14, 'Есть кнопка «Позвонить»? Ответьте Да или Нет.'),
+            (15, 'Указана станция метро или ориентир рядом? Ответьте Да или Нет.'),
+        ]
+        r_q = await session.execute(select(YandexMapsQuestion))
+        existing_slots = {q.slot for q in r_q.scalars().all()}
+        for slot, body in question_defaults:
+            if slot not in existing_slots:
                 session.add(YandexMapsQuestion(slot=slot, body=body, active=True))
+        quiz_order = await session.get(AppSetting, YANDEX_QUIZ_DEFAULT_ORDER_KEY)
+        if not quiz_order:
+            session.add(
+                AppSetting(
+                    key=YANDEX_QUIZ_DEFAULT_ORDER_KEY,
+                    value=format_question_order(default_question_order()),
+                )
+            )
         await session.commit()

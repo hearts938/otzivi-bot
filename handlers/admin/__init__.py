@@ -11,6 +11,7 @@ from handlers.admin import (
     tasks_mgmt,
     users,
     withdrawals,
+    yandex_quiz,
 )
 
 router = Router(name="admin_root")
@@ -24,3 +25,4 @@ router.include_router(broadcast.router)
 router.include_router(finance.router)
 router.include_router(ops.router)
 router.include_router(tasks_mgmt.router)
+router.include_router(yandex_quiz.router)

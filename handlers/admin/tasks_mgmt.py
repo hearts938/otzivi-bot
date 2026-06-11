@@ -40,7 +40,7 @@ from handlers.keyboards import (
     parse_admin_task_pick,
     platform_pick_label,
 )
-from services.yandex_maps import is_yandex_maps_slug, parse_question_order, format_question_order
+from services.yandex_maps import is_yandex_maps_slug
 from repo import (
     add_task_text,
     create_customer_task,
@@ -313,22 +313,7 @@ async def _create_customer_from_state(
 
 
 @router.message(CustomerAddFSM.org_address, F.text)
-async def tadd_org_address(message: Message, state: FSMContext, settings: Settings):
-    if not is_admin(message.from_user.id, settings):
-        await state.clear()
-        return
-    await state.update_data(org_address=(message.text or "").strip()[:1024])
-    await state.set_state(CustomerAddFSM.question_order)
-    await message.answer(
-        "Порядок контрольных вопросов (10 номеров 1–10 через запятую).\n"
-        "Пример: <code>1,2,3,4,5,6,7,8,9,10</code>",
-        reply_markup=admin_cancel_kb(),
-        parse_mode="HTML",
-    )
-
-
-@router.message(CustomerAddFSM.question_order, F.text)
-async def tadd_question_order(
+async def tadd_org_address(
     message: Message,
     state: FSMContext,
     settings: Settings,
@@ -337,17 +322,8 @@ async def tadd_question_order(
     if not is_admin(message.from_user.id, settings):
         await state.clear()
         return
-    order, err = parse_question_order(message.text or "")
-    if err:
-        await message.answer(err, reply_markup=admin_cancel_kb())
-        return
-    await _create_customer_from_state(
-        message,
-        state,
-        session_factory,
-        settings,
-        yandex_question_order=format_question_order(order),
-    )
+    await state.update_data(org_address=(message.text or "").strip()[:1024])
+    await _create_customer_from_state(message, state, session_factory, settings)
 
 
 async def _send_task_list(

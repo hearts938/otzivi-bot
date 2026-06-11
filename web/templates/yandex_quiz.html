@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% block title %}Тест Яндекс Карт{% endblock %}
+{% block body %}
+<h1>Тест Яндекс Карт</h1>
+<p>Контрольные вопросы показываются <strong>только</strong> при выдаче заданий на Яндекс Картах.</p>
+{% if msg %}<p class="alert alert-ok">{{ msg }}</p>{% endif %}
+{% if err %}<p class="alert alert-err">{{ err }}</p>{% endif %}
+
+<h2>Порядок и количество</h2>
+<p>Сейчас: <strong>{{ question_count }}</strong> вопросов — <code>{{ order }}</code></p>
+<form method="post" action="/yandex-quiz/order">
+  <div>
+    <label>Номера слотов через запятую (10–15 вопросов, слоты 1–15)<br/>
+      <input name="order" type="text" value="{{ order }}" style="width:100%;max-width:520px" required/>
+    </label>
+  </div>
+  <button type="submit" class="btn-primary">Сохранить порядок</button>
+</form>
+
+<h2>Вопросы</h2>
+<table>
+  <tr><th>Слот</th><th>Активен</th><th>Текст</th><th></th></tr>
+  {% for q in questions %}
+  <tr>
+    <td>{{ q.slot }}</td>
+    <td>{% if q.active %}да{% else %}нет{% endif %}</td>
+    <td>{{ q.body }}</td>
+    <td><a href="/yandex-quiz/{{ q.slot }}">изменить</a></td>
+  </tr>
+  {% endfor %}
+</table>
+{% endblock %}

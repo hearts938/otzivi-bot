@@ -64,3 +64,9 @@ class DeleteTextsFSM(StatesGroup):
 class AdminUsersBrowse(StatesGroup):
     summary = State()
     list_pick = State()
+
+
+class YandexQuizFSM(StatesGroup):
+    order = State()
+    edit_slot = State()
+    edit_body = State()

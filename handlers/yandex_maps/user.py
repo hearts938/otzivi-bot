@@ -48,7 +48,7 @@ from repo import (
     get_submission_for_user_task,
     get_task,
     get_yandex_conditions,
-    list_yandex_questions_by_order,
+    list_yandex_questions_for_task,
     release_ym_assignment,
     save_ym_session,
     start_ym_session,
@@ -437,9 +437,9 @@ async def ym_quiz_start(
         t = await get_task(session, ym.task_id)
         if not t:
             return
-        questions = await list_yandex_questions_by_order(session, t.yandex_question_order)
+        questions = await list_yandex_questions_for_task(session, t)
         if not questions:
-            await message.answer("Вопросы не настроены. Обратитесь к администратору.")
+            await message.answer("Вопросы теста не настроены. Обратитесь к администратору.")
             return
         ym.step = "question"
         ym.question_index = 0
@@ -513,9 +513,7 @@ async def ym_answer(
         if not await task_platform_is_yandex(session, ym.task_id):
             return
         t = await get_task(session, ym.task_id)
-        questions = await list_yandex_questions_by_order(
-            session, t.yandex_question_order if t else None
-        )
+        questions = await list_yandex_questions_for_task(session, t)
         if not questions:
             return
         nxt = ym.question_index + 1

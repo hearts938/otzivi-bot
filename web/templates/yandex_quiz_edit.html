@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% block title %}Вопрос {{ slot }}{% endblock %}
+{% block body %}
+<h1>Вопрос слот {{ slot }}</h1>
+{% if err %}<p class="alert alert-err">{{ err }}</p>{% endif %}
+<form method="post" action="/yandex-quiz/{{ slot }}">
+  <div>
+    <label>Текст вопроса<br/>
+      <textarea name="body" rows="4" style="width:100%;max-width:640px" required>{{ body }}</textarea>
+    </label>
+  </div>
+  <div>
+    <label><input type="checkbox" name="active" value="1"{% if active %} checked{% endif %}/> Активен (можно включать в тест)</label>
+  </div>
+  <button type="submit" class="btn-primary">Сохранить</button>
+</form>
+<p><a href="/yandex-quiz">Назад к тесту</a></p>
+{% endblock %}

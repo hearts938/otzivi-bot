@@ -132,7 +132,7 @@ class Submission(Base):
 
 
 class YandexMapsQuestion(Base):
-    """Пул из 10 контрольных вопросов (слоты 1–10)."""
+    """Пул контрольных вопросов теста Яндекс Карт (слоты 1–15)."""
 
     __tablename__ = "yandex_maps_questions"
 

@@ -58,6 +58,10 @@ A_IMPORT_EXCEL = "📥 Импорт из Excel"
 A_REVIEW = "📋 Задания на проверке"
 A_SUPPORT = "📩 Поддержка"
 A_WITHDRAWALS = "💸 Заявки на вывод"
+A_YM_QUIZ = "📝 Тест Яндекс Карт"
+BTN_YM_QUIZ_ORDER = "🔢 Порядок и количество"
+BTN_YM_QUIZ_EDIT = "✏️ Изменить вопрос"
+BTN_YM_QUIZ_LIST = "📋 Список вопросов"
 
 ADMIN_MAIN_BUTTONS = frozenset({
     BTN_ADMIN_HOME,
@@ -79,6 +83,10 @@ ADMIN_MAIN_BUTTONS = frozenset({
     A_REVIEW,
     A_SUPPORT,
     A_WITHDRAWALS,
+    A_YM_QUIZ,
+    BTN_YM_QUIZ_ORDER,
+    BTN_YM_QUIZ_EDIT,
+    BTN_YM_QUIZ_LIST,
     BTN_BALANCE_CREDIT,
     BTN_BALANCE_DEBIT,
 })
@@ -215,11 +223,16 @@ def admin_root_kb() -> ReplyKeyboardMarkup:
             A_REVIEW,
             A_SUPPORT,
             A_WITHDRAWALS,
+            A_YM_QUIZ,
             A_IMPORT_EXCEL,
             BTN_USER_MENU,
             BTN_ADMIN_HOME,
         )
     )
+
+
+def admin_ym_quiz_kb() -> ReplyKeyboardMarkup:
+    return _kb(_rows(BTN_YM_QUIZ_ORDER, BTN_YM_QUIZ_EDIT, BTN_YM_QUIZ_LIST, BTN_ADMIN_HOME))
 
 
 def admin_users_menu_kb() -> ReplyKeyboardMarkup:

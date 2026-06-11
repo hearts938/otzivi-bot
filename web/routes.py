@@ -29,7 +29,11 @@ from repo import (
     get_setting,
     get_task,
     get_user_by_id,
+    get_yandex_quiz_default_order,
     import_review_texts,
+    list_all_yandex_questions,
+    set_yandex_quiz_default_order,
+    update_yandex_question,
     list_all_tasks,
     list_platforms_all,
     list_users_admin,
@@ -47,6 +51,7 @@ from services.text_pool import build_pool_lines, parse_number_list
 from services.texts_import import parse_review_texts_excel
 from services.timezone_util import publish_at_midnight
 from services.admin_stats import list_platforms, platform_snapshot, user_activity_bundle
+from services.yandex_maps import parse_question_order
 from sqlalchemy import select
 from database.models import User
 
@@ -144,38 +149,41 @@ async def user_detail(request: Request, uid: int):
     r = _need_admin(request)
     if r:
         return r
+    msg = request.query_params.get("msg")
+    err = request.query_params.get("err")
     async with _sf(request)() as session:
         u = await get_user_by_id(session, uid)
         if not u:
             return HTMLResponse("Не найден", status_code=404)
         done = await count_approved_submissions(session, u.id)
         d_act, w_act, m_act = await user_activity_bundle(session, u.id)
-    name = " ".join(x for x in [u.first_name or "", u.last_name or ""] if x).strip() or "—"
-    un = f"@{u.username}" if u.username else "—"
-    act = "заблокирован" if u.is_banned else "активен"
-    text = (
-        f"tg id: {u.telegram_id}\n"
-        f"username: {un}\n"
-        f"имя: {name}\n"
-        f"регистрация: {u.created_at}\n"
-        f"баланс: {u.balance:.2f}\n"
-        f"заработок с рефералов: {u.referral_earned_total:.2f}\n"
-        f"выполнено заданий: {done}\n"
-        f"общий заработок (с заданий): {u.total_earned:.2f}\n"
-        f"активность (одобр.): сегодня {d_act}, неделя {w_act}, месяц {m_act}\n"
-        f"статус: {act}"
-    )
-    msg = request.query_params.get("msg")
-    err = request.query_params.get("err")
+        name = " ".join(x for x in [u.first_name or "", u.last_name or ""] if x).strip() or "—"
+        un = f"@{u.username}" if u.username else "—"
+        act = "заблокирован" if u.is_banned else "активен"
+        balance = float(u.balance or 0)
+        pending_balance = float(u.pending_balance or 0)
+        banned = bool(u.is_banned)
+        text = (
+            f"tg id: {u.telegram_id}\n"
+            f"username: {un}\n"
+            f"имя: {name}\n"
+            f"регистрация: {u.created_at}\n"
+            f"баланс: {balance:.2f}\n"
+            f"заработок с рефералов: {float(u.referral_earned_total or 0):.2f}\n"
+            f"выполнено заданий: {done}\n"
+            f"общий заработок (с заданий): {float(u.total_earned or 0):.2f}\n"
+            f"активность (одобр.): сегодня {d_act}, неделя {w_act}, месяц {m_act}\n"
+            f"статус: {act}"
+        )
     return templates.TemplateResponse(
         "user_detail.html",
         {
             "request": request,
             "uid": uid,
             "text": text,
-            "banned": u.is_banned,
-            "balance": float(u.balance or 0),
-            "pending_balance": float(u.pending_balance or 0),
+            "banned": banned,
+            "balance": balance,
+            "pending_balance": pending_balance,
             "msg": msg,
             "err": err,
         },
@@ -482,6 +490,91 @@ async def balance_post(request: Request):
         },
         status_code=400 if err else 200,
     )
+
+
+@router.get("/yandex-quiz", response_class=HTMLResponse)
+async def yandex_quiz_get(request: Request):
+    r = _need_admin(request)
+    if r:
+        return r
+    async with _sf(request)() as session:
+        order = await get_yandex_quiz_default_order(session)
+        questions = await list_all_yandex_questions(session)
+    order_list, _ = parse_question_order(order)
+    return templates.TemplateResponse(
+        "yandex_quiz.html",
+        {
+            "request": request,
+            "order": order,
+            "question_count": len(order_list or []),
+            "questions": questions,
+            "msg": request.query_params.get("msg"),
+            "err": request.query_params.get("err"),
+        },
+    )
+
+
+@router.post("/yandex-quiz/order")
+async def yandex_quiz_order_post(request: Request):
+    r = _need_admin(request)
+    if r:
+        return r
+    form = await request.form()
+    raw = (form.get("order") or "").strip()
+    async with _sf(request)() as session:
+        saved, err = await set_yandex_quiz_default_order(session, raw)
+    if err:
+        return RedirectResponse(f"/yandex-quiz?err={quote(err)}", status_code=303)
+    return RedirectResponse(f"/yandex-quiz?msg={quote(f'Сохранено: {saved}')}", status_code=303)
+
+
+@router.get("/yandex-quiz/{slot}", response_class=HTMLResponse)
+async def yandex_quiz_edit_get(request: Request, slot: int):
+    r = _need_admin(request)
+    if r:
+        return r
+    async with _sf(request)() as session:
+        rows = {q.slot: q for q in await list_all_yandex_questions(session)}
+        q = rows.get(slot)
+    if not q:
+        return RedirectResponse("/yandex-quiz?err=" + quote("Слот не найден"), status_code=303)
+    return templates.TemplateResponse(
+        "yandex_quiz_edit.html",
+        {
+            "request": request,
+            "slot": slot,
+            "body": q.body,
+            "active": q.active,
+            "err": None,
+        },
+    )
+
+
+@router.post("/yandex-quiz/{slot}")
+async def yandex_quiz_edit_post(request: Request, slot: int):
+    r = _need_admin(request)
+    if r:
+        return r
+    form = await request.form()
+    body = (form.get("body") or "").strip()
+    active = form.get("active") == "1"
+    if not body:
+        return templates.TemplateResponse(
+            "yandex_quiz_edit.html",
+            {
+                "request": request,
+                "slot": slot,
+                "body": body,
+                "active": active,
+                "err": "Текст не может быть пустым",
+            },
+            status_code=400,
+        )
+    async with _sf(request)() as session:
+        q = await update_yandex_question(session, slot, body=body, active=active)
+    if not q:
+        return RedirectResponse("/yandex-quiz?err=" + quote("Слот не найден"), status_code=303)
+    return RedirectResponse(f"/yandex-quiz?msg={quote(f'Слот {slot} обновлён')}", status_code=303)
 
 
 @router.get("/stars", response_class=HTMLResponse)

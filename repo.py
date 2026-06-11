@@ -27,7 +27,13 @@ from database.models import (
     YandexMapsQuestion,
     YandexMapsSession,
 )
-from services.yandex_maps import is_yandex_maps_slug, parse_question_order
+from services.yandex_maps import (
+    YANDEX_QUIZ_DEFAULT_ORDER_KEY,
+    default_question_order,
+    format_question_order,
+    is_yandex_maps_slug,
+    parse_question_order,
+)
 from services.cooldown import compute_cooldown_until
 from services.cooldown import release_expired_cooldowns
 
@@ -584,12 +590,61 @@ def user_is_banned_now(u: User) -> bool:
     return bool(u.is_banned)
 
 
+async def get_yandex_quiz_default_order(session: AsyncSession) -> str:
+    row = await session.get(AppSetting, YANDEX_QUIZ_DEFAULT_ORDER_KEY)
+    raw = (row.value if row else "").strip()
+    order, err = parse_question_order(raw)
+    if err or not order:
+        return format_question_order(default_question_order())
+    return format_question_order(order)
+
+
+async def set_yandex_quiz_default_order(session: AsyncSession, order_csv: str) -> tuple[str | None, str | None]:
+    order, err = parse_question_order(order_csv)
+    if err or not order:
+        return None, err or "Некорректный порядок вопросов."
+    value = format_question_order(order)
+    row = await session.get(AppSetting, YANDEX_QUIZ_DEFAULT_ORDER_KEY)
+    if row:
+        row.value = value
+    else:
+        session.add(AppSetting(key=YANDEX_QUIZ_DEFAULT_ORDER_KEY, value=value))
+    await session.commit()
+    return value, None
+
+
+async def list_all_yandex_questions(session: AsyncSession) -> list[YandexMapsQuestion]:
+    r = await session.execute(
+        select(YandexMapsQuestion).order_by(YandexMapsQuestion.slot)
+    )
+    return list(r.scalars().all())
+
+
+async def update_yandex_question(
+    session: AsyncSession,
+    slot: int,
+    *,
+    body: str | None = None,
+    active: bool | None = None,
+) -> YandexMapsQuestion | None:
+    q = await session.get(YandexMapsQuestion, slot)
+    if not q:
+        return None
+    if body is not None:
+        q.body = body.strip()
+    if active is not None:
+        q.active = bool(active)
+    await session.commit()
+    await session.refresh(q)
+    return q
+
+
 async def list_yandex_questions_by_order(
     session: AsyncSession, order_csv: str | None
 ) -> list[YandexMapsQuestion]:
     order, err = parse_question_order(order_csv or "")
     if err or not order:
-        order = list(range(1, 11))
+        order = default_question_order()
     r = await session.execute(
         select(YandexMapsQuestion).where(
             YandexMapsQuestion.slot.in_(order),
@@ -598,6 +653,21 @@ async def list_yandex_questions_by_order(
     )
     by_slot = {q.slot: q for q in r.scalars().all()}
     return [by_slot[s] for s in order if s in by_slot]
+
+
+async def list_yandex_questions_for_task(
+    session: AsyncSession, task: Task | None
+) -> list[YandexMapsQuestion]:
+    """Вопросы теста только для заданий Яндекс Карт."""
+    if not task:
+        return []
+    p = await session.get(Platform, task.platform_id) if task.platform_id else None
+    if not p or not is_yandex_maps_slug(p.slug):
+        return []
+    order_csv = (task.yandex_question_order or "").strip()
+    if not order_csv:
+        order_csv = await get_yandex_quiz_default_order(session)
+    return await list_yandex_questions_by_order(session, order_csv)
 
 
 async def claim_yandex_assignment(
