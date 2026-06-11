@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block title %}Проверка — {{ platform.name }}{% endblock %}
+{% block body %}
+<h1>{{ platform.name }}</h1>
+<p>На проверке: <strong>{{ pending_total }}</strong> · в кулдауне: <strong>{{ cooldown }}</strong></p>
+{% if tasks %}
+<ul>
+  {% for t, cnt in tasks %}
+  <li>
+    <a href="/review/task/{{ t.id }}">{{ t.customer_name or t.title or ('Задание #' ~ t.id) }}</a>
+    — {{ cnt }} отзыв(ов)
+  </li>
+  {% endfor %}
+</ul>
+{% else %}
+<p>Нет отзывов на проверке по этому сервису.</p>
+{% endif %}
+<p><a href="/review">← К сервисам</a></p>
+{% endblock %}

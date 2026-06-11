@@ -32,7 +32,11 @@ from repo import (
     get_support_ticket,
     list_open_support_tickets,
     count_open_support_tickets,
+    count_submissions_in_cooldown,
     import_review_texts,
+    list_pending_submissions_for_task,
+    list_platforms_with_pending_reviews,
+    list_tasks_with_pending_reviews,
     list_all_yandex_questions,
     update_yandex_question,
     list_all_tasks,
@@ -46,6 +50,7 @@ from repo import (
     update_platform_cooldown,
 )
 from services.broadcast import attachment_from_upload, read_upload_file, run_broadcast
+from services.rewards import approve_submission, reject_submission
 from services.support_admin import deliver_support_reply, reject_support_ticket
 from services.publish_scheduler import activate_due_texts
 from services.gender import gender_label
@@ -55,7 +60,7 @@ from services.timezone_util import publish_at_midnight
 from services.admin_stats import list_platforms, platform_snapshot, user_activity_bundle
 from services.yandex_maps import YANDEX_QUIZ_POOL_SIZE
 from sqlalchemy import select
-from database.models import SupportTicketStatus, User
+from database.models import Platform, SupportTicketStatus, User
 
 _SUPPORT_STATUS = {
     SupportTicketStatus.OPEN: "открыто",
@@ -408,6 +413,164 @@ async def broadcast_post(
         media = ", с файлом"
     msg = f"Успешно: {ok}, ошибок: {bad}{media}"
     return templates.TemplateResponse("broadcast.html", {"request": request, "msg": msg, "err": None})
+
+
+@router.get("/review", response_class=HTMLResponse)
+async def review_root(request: Request):
+    r = _need_admin(request)
+    if r:
+        return r
+    async with _sf(request)() as session:
+        platforms = await list_platforms_with_pending_reviews(session)
+        cooldown = await count_submissions_in_cooldown(session)
+    pending_total = sum(cnt for _, cnt in platforms)
+    return templates.TemplateResponse(
+        "review.html",
+        {
+            "request": request,
+            "platforms": platforms,
+            "pending_total": pending_total,
+            "cooldown": cooldown,
+            "msg": request.query_params.get("msg"),
+            "err": request.query_params.get("err"),
+        },
+    )
+
+
+@router.get("/review/platform/{platform_id}", response_class=HTMLResponse)
+async def review_platform(request: Request, platform_id: int):
+    r = _need_admin(request)
+    if r:
+        return r
+    async with _sf(request)() as session:
+        platform = await session.get(Platform, platform_id)
+        if not platform:
+            return RedirectResponse("/review?err=" + quote("Сервис не найден"), status_code=303)
+        tasks = await list_tasks_with_pending_reviews(session, platform_id)
+        cooldown = await count_submissions_in_cooldown(session, platform_id=platform_id)
+    pending_total = sum(cnt for _, cnt in tasks)
+    return templates.TemplateResponse(
+        "review_platform.html",
+        {
+            "request": request,
+            "platform": platform,
+            "tasks": tasks,
+            "pending_total": pending_total,
+            "cooldown": cooldown,
+        },
+    )
+
+
+@router.get("/review/task/{task_id}", response_class=HTMLResponse)
+async def review_task(request: Request, task_id: int):
+    r = _need_admin(request)
+    if r:
+        return r
+    async with _sf(request)() as session:
+        task = await get_task(session, task_id)
+        if not task:
+            return RedirectResponse("/review?err=" + quote("Задание не найдено"), status_code=303)
+        subs = await list_pending_submissions_for_task(session, task_id)
+        cooldown = await count_submissions_in_cooldown(session, task_id=task_id)
+    rows = []
+    for sub in subs:
+        done = sub.completed_at or sub.created_at
+        rows.append(
+            {
+                "id": sub.id,
+                "user": sub.user,
+                "gender_label": gender_label(sub.user.gender if sub.user else None),
+                "review_text": sub.review_text or "",
+                "done_at": done.strftime("%d.%m.%Y %H:%M") if done else "—",
+            }
+        )
+    return templates.TemplateResponse(
+        "review_task.html",
+        {
+            "request": request,
+            "task": task,
+            "submissions": rows,
+            "cooldown": cooldown,
+            "msg": request.query_params.get("msg"),
+            "err": request.query_params.get("err"),
+        },
+    )
+
+
+async def _notify_review_decision(request: Request, user_tg_id: int, *, approved: bool) -> None:
+    bot = request.app.state.bot
+    text = (
+        "✅ Отзыв одобрен, вознаграждение на балансе."
+        if approved
+        else "Отзыв не принят модератором."
+    )
+    try:
+        await bot.send_message(user_tg_id, text)
+    except (TelegramForbiddenError, TelegramBadRequest):
+        pass
+
+
+@router.post("/review/{submission_id}/approve")
+async def review_approve(request: Request, submission_id: int):
+    r = _need_admin(request)
+    if r:
+        return r
+    settings = _settings(request)
+    task_id: int | None = None
+    user_tg: int | None = None
+    info: str | None = None
+    async with _sf(request)() as session:
+        from database.models import Submission
+
+        sub_before = await session.get(Submission, submission_id)
+        task_id = sub_before.task_id if sub_before else None
+        info = await approve_submission(session, settings, submission_id)
+        if info:
+            sub_after = await session.get(Submission, submission_id)
+            if sub_after and sub_after.user_id:
+                u = await session.get(User, sub_after.user_id)
+                user_tg = u.telegram_id if u else None
+    if not info or not task_id:
+        return RedirectResponse(
+            f"/review?err={quote('Не удалось одобрить')}",
+            status_code=303,
+        )
+    if user_tg:
+        await _notify_review_decision(request, user_tg, approved=True)
+    return RedirectResponse(
+        f"/review/task/{task_id}?msg={quote(info.replace(chr(10), ' '))}",
+        status_code=303,
+    )
+
+
+@router.post("/review/{submission_id}/reject")
+async def review_reject(request: Request, submission_id: int):
+    r = _need_admin(request)
+    if r:
+        return r
+    task_id: int | None = None
+    user_tg: int | None = None
+    ok = False
+    async with _sf(request)() as session:
+        from database.models import Submission
+
+        sub_before = await session.get(Submission, submission_id)
+        task_id = sub_before.task_id if sub_before else None
+        if sub_before and sub_before.user_id:
+            u = await session.get(User, sub_before.user_id)
+            user_tg = u.telegram_id if u else None
+        ok = await reject_submission(session, submission_id)
+    if not ok or not task_id:
+        return RedirectResponse(
+            f"/review?err={quote('Не удалось отклонить')}",
+            status_code=303,
+        )
+    if user_tg:
+        await _notify_review_decision(request, user_tg, approved=False)
+    return RedirectResponse(
+        f"/review/task/{task_id}?msg={quote('Отклонено')}",
+        status_code=303,
+    )
 
 
 @router.get("/finance", response_class=HTMLResponse)

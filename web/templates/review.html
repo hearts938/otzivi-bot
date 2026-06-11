@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+{% block title %}На проверке{% endblock %}
+{% block body %}
+<h1>Задания на проверке</h1>
+<p>На проверке: <strong>{{ pending_total }}</strong> · в кулдауне: <strong>{{ cooldown }}</strong></p>
+{% if msg %}<p class="alert alert-ok">{{ msg }}</p>{% endif %}
+{% if err %}<p class="alert alert-err">{{ err }}</p>{% endif %}
+{% if platforms %}
+<ul>
+  {% for p, cnt in platforms %}
+  <li><a href="/review/platform/{{ p.id }}">{{ p.name }}</a> — {{ cnt }} отзыв(ов)</li>
+  {% endfor %}
+</ul>
+{% else %}
+<p>Сейчас нет отзывов, ожидающих проверки{% if cooldown %} ({{ cooldown }} ещё на кулдауне){% endif %}.</p>
+{% endif %}
+{% endblock %}
