@@ -1471,6 +1471,19 @@ async def count_open_support_tickets(session: AsyncSession) -> int:
     return int(r.scalar() or 0)
 
 
+async def list_open_support_tickets(
+    session: AsyncSession, *, limit: int = 100
+) -> list[SupportTicket]:
+    r = await session.execute(
+        select(SupportTicket)
+        .where(SupportTicket.status == SupportTicketStatus.OPEN)
+        .order_by(SupportTicket.created_at.asc(), SupportTicket.id.asc())
+        .limit(limit)
+        .options(selectinload(SupportTicket.user))
+    )
+    return list(r.scalars().all())
+
+
 async def get_oldest_open_support_ticket(session: AsyncSession) -> SupportTicket | None:
     r = await session.execute(
         select(SupportTicket)

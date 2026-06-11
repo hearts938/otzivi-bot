@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% block title %}Поддержка{% endblock %}
+{% block body %}
+<h1>Поддержка</h1>
+<p>Открытых обращений: <strong>{{ open_count }}</strong></p>
+{% if msg %}<p class="alert alert-ok">{{ msg }}</p>{% endif %}
+{% if err %}<p class="alert alert-err">{{ err }}</p>{% endif %}
+{% if tickets %}
+<table>
+  <tr><th>#</th><th>дата</th><th>пользователь</th><th>текст</th><th></th></tr>
+  {% for t in tickets %}
+  <tr>
+    <td>sup{{ t.id }}</td>
+    <td>{{ t.created_at }}</td>
+    <td>{% if t.user and t.user.username %}@{{ t.user.username }}{% else %}tg {{ t.user.telegram_id if t.user else '?' }}{% endif %}</td>
+    <td>{{ (t.text or '')[:80] }}{% if (t.text or '')|length > 80 %}…{% endif %}{% if t.photo_file_id %} 📷{% endif %}</td>
+    <td><a href="/support/{{ t.id }}">открыть</a></td>
+  </tr>
+  {% endfor %}
+</table>
+{% else %}
+<p>Нет открытых обращений.</p>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% block title %}Обращение #{{ ticket.id }}{% endblock %}
+{% block body %}
+<h1>Обращение ·#sup{{ ticket.id }}</h1>
+{% if msg %}<p class="alert alert-ok">{{ msg }}</p>{% endif %}
+{% if err %}<p class="alert alert-err">{{ err }}</p>{% endif %}
+
+<p>
+  <strong>Пользователь:</strong>
+  {% if user.username %}@{{ user.username }}{% else %}—{% endif %}
+  (tg <code>{{ user.telegram_id }}</code>)<br/>
+  <strong>Дата:</strong> {{ ticket.created_at }}<br/>
+  <strong>Статус:</strong> {{ status_label }}
+</p>
+
+<h2>Текст обращения</h2>
+<pre>{{ ticket.text }}</pre>
+{% if ticket.photo_file_id %}
+<p>📷 К обращению приложен скриншот (отправлен в Telegram-боте).</p>
+{% endif %}
+
+{% if ticket.status == 'open' %}
+<h2>Ответить</h2>
+<form method="post" action="/support/{{ ticket.id }}/reply" enctype="multipart/form-data">
+  <div>
+    <label>Текст ответа<br/>
+      <textarea name="reply" rows="5" style="width:100%;max-width:640px" required></textarea>
+    </label>
+  </div>
+  <div>
+    <label>Фото (необязательно)<br/>
+      <input name="photo" type="file" accept="image/*"/>
+    </label>
+  </div>
+  <button type="submit" class="btn-primary">Отправить ответ</button>
+</form>
+
+<form method="post" action="/support/{{ ticket.id }}/reject" style="margin-top:1.5rem" onsubmit="return confirm('Отклонить обращение без ответа?');">
+  <button type="submit">Отклонить</button>
+</form>
+{% endif %}
+
+<p><a href="/support">← К списку</a></p>
+{% endblock %}

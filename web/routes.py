@@ -29,7 +29,10 @@ from repo import (
     get_setting,
     get_task,
     get_user_by_id,
+    get_support_ticket,
     get_yandex_quiz_default_order,
+    list_open_support_tickets,
+    count_open_support_tickets,
     import_review_texts,
     list_all_yandex_questions,
     set_yandex_quiz_default_order,
@@ -45,6 +48,7 @@ from repo import (
     update_platform_cooldown,
 )
 from services.broadcast import attachment_from_upload, read_upload_file, run_broadcast
+from services.support_admin import deliver_support_reply, reject_support_ticket
 from services.publish_scheduler import activate_due_texts
 from services.gender import gender_label
 from services.text_pool import build_pool_lines, parse_number_list
@@ -53,7 +57,13 @@ from services.timezone_util import publish_at_midnight
 from services.admin_stats import list_platforms, platform_snapshot, user_activity_bundle
 from services.yandex_maps import parse_question_order
 from sqlalchemy import select
-from database.models import User
+from database.models import SupportTicketStatus, User
+
+_SUPPORT_STATUS = {
+    SupportTicketStatus.OPEN: "открыто",
+    SupportTicketStatus.ANSWERED: "отвечено",
+    SupportTicketStatus.REJECTED: "отклонено",
+}
 
 TEMPLATES_DIR = Path(__file__).resolve().parent / "templates"
 templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
@@ -646,6 +656,101 @@ async def stars_post(request: Request):
     async with _sf(request)() as session:
         await set_setting(session, "stars_rub_per_star", str(v))
     return RedirectResponse("/stars", status_code=302)
+
+
+@router.get("/support", response_class=HTMLResponse)
+async def support_list(request: Request):
+    r = _need_admin(request)
+    if r:
+        return r
+    async with _sf(request)() as session:
+        tickets = await list_open_support_tickets(session)
+        open_count = await count_open_support_tickets(session)
+    return templates.TemplateResponse(
+        "support.html",
+        {
+            "request": request,
+            "tickets": tickets,
+            "open_count": open_count,
+            "msg": request.query_params.get("msg"),
+            "err": request.query_params.get("err"),
+        },
+    )
+
+
+@router.get("/support/{ticket_id}", response_class=HTMLResponse)
+async def support_detail(request: Request, ticket_id: int):
+    r = _need_admin(request)
+    if r:
+        return r
+    async with _sf(request)() as session:
+        ticket = await get_support_ticket(session, ticket_id, with_user=True)
+        if not ticket or not ticket.user:
+            return RedirectResponse("/support?err=" + quote("Обращение не найдено"), status_code=303)
+        user = ticket.user
+        status_label = _SUPPORT_STATUS.get(ticket.status, ticket.status)
+    return templates.TemplateResponse(
+        "support_detail.html",
+        {
+            "request": request,
+            "ticket": ticket,
+            "user": user,
+            "status_label": status_label,
+            "msg": request.query_params.get("msg"),
+            "err": request.query_params.get("err"),
+        },
+    )
+
+
+@router.post("/support/{ticket_id}/reply")
+async def support_reply(
+    request: Request,
+    ticket_id: int,
+    reply: str = Form(...),
+    photo: UploadFile | None = File(default=None),
+):
+    r = _need_admin(request)
+    if r:
+        return r
+    photo_bytes, photo_name, _ = await read_upload_file(photo)
+    bot = request.app.state.bot
+    async with _sf(request)() as session:
+        ok, err = await deliver_support_reply(
+            bot,
+            session,
+            ticket_id,
+            text=reply,
+            photo_bytes=photo_bytes or None,
+            photo_filename=photo_name or "photo.jpg",
+        )
+    if not ok:
+        return RedirectResponse(
+            f"/support/{ticket_id}?err={quote(err or 'Ошибка отправки')}",
+            status_code=303,
+        )
+    return RedirectResponse(
+        f"/support?msg={quote(f'Ответ отправлен (sup{ticket_id})')}",
+        status_code=303,
+    )
+
+
+@router.post("/support/{ticket_id}/reject")
+async def support_reject(request: Request, ticket_id: int):
+    r = _need_admin(request)
+    if r:
+        return r
+    bot = request.app.state.bot
+    async with _sf(request)() as session:
+        ok, err = await reject_support_ticket(bot, session, ticket_id)
+    if not ok:
+        return RedirectResponse(
+            f"/support/{ticket_id}?err={quote(err or 'Ошибка')}",
+            status_code=303,
+        )
+    return RedirectResponse(
+        f"/support?msg={quote(f'Обращение sup{ticket_id} отклонено')}",
+        status_code=303,
+    )
 
 
 @router.get("/outreach", response_class=HTMLResponse)
