@@ -20,17 +20,61 @@ IMAGE_MIMES = frozenset({
 IMAGE_EXTENSIONS = frozenset({".jpg", ".jpeg", ".png", ".gif", ".webp"})
 
 
-def is_image_attachment(mime_type: str | None, filename: str | None) -> bool:
+def sniff_is_image(data: bytes) -> bool:
+    if len(data) < 12:
+        return False
+    if data[:3] == b"\xff\xd8\xff":
+        return True
+    if data[:8] == b"\x89PNG\r\n\x1a\n":
+        return True
+    if data[:6] in (b"GIF87a", b"GIF89a"):
+        return True
+    if data[:4] == b"RIFF" and data[8:12] == b"WEBP":
+        return True
+    return False
+
+
+def is_image_attachment(
+    mime_type: str | None,
+    filename: str | None,
+    data: bytes | None = None,
+) -> bool:
     mime = (mime_type or "").strip().lower()
     if mime in IMAGE_MIMES or mime.startswith("image/"):
         return True
     name = (filename or "").strip().lower()
-    if not name:
-        return False
-    dot = name.rfind(".")
-    if dot < 0:
-        return False
-    return name[dot:] in IMAGE_EXTENSIONS
+    if name:
+        dot = name.rfind(".")
+        if dot >= 0 and name[dot:] in IMAGE_EXTENSIONS:
+            return True
+    return bool(data and sniff_is_image(data))
+
+
+def photo_filename_for_upload(data: bytes, filename: str | None) -> str:
+    if data[:3] == b"\xff\xd8\xff":
+        return "image.jpg"
+    if data[:8] == b"\x89PNG\r\n\x1a\n":
+        return "image.png"
+    if data[:6] in (b"GIF87a", b"GIF89a"):
+        return "image.gif"
+    if data[:4] == b"RIFF" and len(data) >= 12 and data[8:12] == b"WEBP":
+        return "image.webp"
+    name = (filename or "").strip()
+    if name:
+        base = name.rsplit("/", 1)[-1].rsplit("\\", 1)[-1]
+        dot = base.rfind(".")
+        if dot >= 0 and base[dot:].lower() in IMAGE_EXTENSIONS:
+            return base
+    return "image.jpg"
+
+
+async def read_upload_file(upload) -> tuple[bytes, str | None, str | None]:
+    if upload is None or not hasattr(upload, "read"):
+        return b"", None, None
+    data = await upload.read()
+    filename = (getattr(upload, "filename", None) or "").strip() or None
+    content_type = (getattr(upload, "content_type", None) or "").strip() or None
+    return data, filename, content_type
 
 
 @dataclass
@@ -88,8 +132,12 @@ def attachment_from_upload(
     if not data:
         return BroadcastAttachment(kind="none")
     name = (filename or "file").strip() or "file"
-    if is_image_attachment(mime_type, name):
-        return BroadcastAttachment(kind="photo_bytes", photo_bytes=data, photo_filename=name)
+    if is_image_attachment(mime_type, name, data):
+        return BroadcastAttachment(
+            kind="photo_bytes",
+            photo_bytes=data,
+            photo_filename=photo_filename_for_upload(data, name),
+        )
     return BroadcastAttachment(
         kind="document_id",
         document_filename=name,

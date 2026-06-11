@@ -8,7 +8,7 @@ import pandas as pd
 
 from aiogram.exceptions import TelegramBadRequest, TelegramForbiddenError
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
-from fastapi import APIRouter, Request, UploadFile
+from fastapi import APIRouter, File, Form, Request, UploadFile
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -44,7 +44,7 @@ from repo import (
     set_user_banned,
     update_platform_cooldown,
 )
-from services.broadcast import attachment_from_upload, run_broadcast
+from services.broadcast import attachment_from_upload, read_upload_file, run_broadcast
 from services.publish_scheduler import activate_due_texts
 from services.gender import gender_label
 from services.text_pool import build_pool_lines, parse_number_list
@@ -344,14 +344,18 @@ async def broadcast_get(request: Request):
 
 
 @router.post("/broadcast", response_class=HTMLResponse)
-async def broadcast_post(request: Request):
+async def broadcast_post(
+    request: Request,
+    text: str = Form(...),
+    btn: str = Form("Старт"),
+    attachment: UploadFile | None = File(default=None),
+    photo: UploadFile | None = File(default=None),
+):
     r = _need_admin(request)
     if r:
         return r
-    form = await request.form()
-    text = (form.get("text") or "").strip()
-    btn = (form.get("btn") or "Старт").strip()[:64]
-    raw_file = form.get("attachment") or form.get("photo")
+    text = (text or "").strip()
+    btn = (btn or "Старт").strip()[:64]
     bot = request.app.state.bot
     me = await bot.get_me()
     if not me.username:
@@ -362,15 +366,20 @@ async def broadcast_post(request: Request):
         )
     url = f"https://t.me/{me.username}?start=broadcast"
     kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text=btn, url=url)]])
-    file_bytes: bytes | None = None
-    file_name: str | None = None
-    file_mime: str | None = None
-    if isinstance(raw_file, UploadFile) and raw_file.filename:
-        file_bytes = await raw_file.read()
-        file_name = raw_file.filename
-        file_mime = raw_file.content_type
-    attachment = attachment_from_upload(
-        file_bytes or b"",
+    raw_upload = attachment if (attachment and attachment.filename) else photo
+    file_bytes, file_name, file_mime = await read_upload_file(raw_upload)
+    if raw_upload and not file_bytes:
+        return templates.TemplateResponse(
+            "broadcast.html",
+            {
+                "request": request,
+                "msg": None,
+                "err": "Файл не загрузился. Проверьте размер (до 10 МБ для фото) и попробуйте снова.",
+            },
+            status_code=400,
+        )
+    attachment_data = attachment_from_upload(
+        file_bytes,
         filename=file_name,
         mime_type=file_mime,
     )
@@ -382,9 +391,14 @@ async def broadcast_post(request: Request):
         ids,
         text=text,
         reply_markup=kb,
-        attachment=attachment,
+        attachment=attachment_data,
     )
-    msg = f"Успешно: {ok}, ошибок: {bad}"
+    media = ""
+    if attachment_data.kind == "photo_bytes":
+        media = ", с фото"
+    elif attachment_data.kind == "document_id":
+        media = ", с файлом"
+    msg = f"Успешно: {ok}, ошибок: {bad}{media}"
     return templates.TemplateResponse("broadcast.html", {"request": request, "msg": msg, "err": None})
 
 
