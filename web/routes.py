@@ -30,12 +30,10 @@ from repo import (
     get_task,
     get_user_by_id,
     get_support_ticket,
-    get_yandex_quiz_default_order,
     list_open_support_tickets,
     count_open_support_tickets,
     import_review_texts,
     list_all_yandex_questions,
-    set_yandex_quiz_default_order,
     update_yandex_question,
     list_all_tasks,
     list_platforms_all,
@@ -55,7 +53,7 @@ from services.text_pool import build_pool_lines, parse_number_list
 from services.texts_import import parse_review_texts_excel
 from services.timezone_util import publish_at_midnight
 from services.admin_stats import list_platforms, platform_snapshot, user_activity_bundle
-from services.yandex_maps import parse_question_order
+from services.yandex_maps import YANDEX_QUIZ_POOL_SIZE
 from sqlalchemy import select
 from database.models import SupportTicketStatus, User
 
@@ -522,34 +520,19 @@ async def yandex_quiz_get(request: Request):
     if r:
         return r
     async with _sf(request)() as session:
-        order = await get_yandex_quiz_default_order(session)
         questions = await list_all_yandex_questions(session)
-    order_list, _ = parse_question_order(order)
+    active_count = sum(1 for q in questions if q.active)
     return templates.TemplateResponse(
         "yandex_quiz.html",
         {
             "request": request,
-            "order": order,
-            "question_count": len(order_list or []),
+            "pool_size": YANDEX_QUIZ_POOL_SIZE,
+            "active_count": active_count,
             "questions": questions,
             "msg": request.query_params.get("msg"),
             "err": request.query_params.get("err"),
         },
     )
-
-
-@router.post("/yandex-quiz/order")
-async def yandex_quiz_order_post(request: Request):
-    r = _need_admin(request)
-    if r:
-        return r
-    form = await request.form()
-    raw = (form.get("order") or "").strip()
-    async with _sf(request)() as session:
-        saved, err = await set_yandex_quiz_default_order(session, raw)
-    if err:
-        return RedirectResponse(f"/yandex-quiz?err={quote(err)}", status_code=303)
-    return RedirectResponse(f"/yandex-quiz?msg={quote(f'Сохранено: {saved}')}", status_code=303)
 
 
 @router.get("/yandex-quiz/{slot}", response_class=HTMLResponse)

@@ -39,6 +39,7 @@ from handlers.yandex_maps.keyboards import (
 )
 from handlers.yandex_maps.states import YandexMapsUserFSM
 from repo import (
+    ban_user_for_days,
     claim_yandex_assignment,
     clear_ym_session,
     complete_onboarding,
@@ -48,14 +49,18 @@ from repo import (
     get_submission_for_user_task,
     get_task,
     get_yandex_conditions,
-    list_yandex_questions_for_task,
     release_ym_assignment,
     save_ym_session,
     start_ym_session,
     task_platform_is_yandex,
     user_is_banned_now,
 )
-from services.yandex_maps import is_yandex_maps_slug
+from services.yandex_maps import YANDEX_QUIZ_POOL_SIZE, format_question_order, is_yandex_maps_slug
+from services.yandex_quiz import (
+    answer_is_too_fast,
+    list_yandex_questions_for_ym_session,
+    pick_random_quiz_slots,
+)
 
 router = Router(name="yandex_maps_user")
 router.message.filter(OnboardingCompletedFilter())
@@ -292,6 +297,32 @@ async def ym_region(
     await _send_org_info(message, session_factory, task.id)
 
 
+async def _handle_quiz_cheat(
+    message: Message,
+    session_factory: async_sessionmaker[AsyncSession],
+    state: FSMContext,
+    settings: Settings,
+    *,
+    user_id: int,
+    ym,
+    min_seconds: int,
+    ban_days: int,
+) -> None:
+    async with session_factory() as session:
+        if ym and ym.task_text_id:
+            await release_ym_assignment(session, user_id, ym.task_text_id)
+        await ban_user_for_days(session, user_id, ban_days)
+        await clear_ym_session(session, user_id)
+    await state.clear()
+    await message.answer(
+        f"⛔ <b>Слишком быстрый ответ</b>\n\n"
+        f"{blockquote(f'Между показом вопроса и ответом должно пройти не менее {min_seconds} с. '
+                       f'Аккаунт заблокирован на {ban_days} дн.')}",
+        parse_mode="HTML",
+        reply_markup=user_main_kb(),
+    )
+
+
 async def _send_org_info(message: Message, session_factory: async_sessionmaker[AsyncSession], task_id: int):
     async with session_factory() as session:
         t = await get_task(session, task_id)
@@ -365,6 +396,7 @@ async def ym_website(
     message: Message,
     session_factory: async_sessionmaker[AsyncSession],
     state: FSMContext,
+    settings: Settings,
 ):
     url = (message.text or "").strip()
     if url in {BTN_YM_YES, BTN_YM_NO}:
@@ -389,7 +421,9 @@ async def ym_website(
         await state.update_data(ym_platform_id=pid)
     await message.answer(
         f"🗺 <b>Контрольные вопросы</b>\n\n"
-        f"{blockquote('Ответьте «Да» или «Нет» на каждый вопрос. Правильность не проверяется.')}",
+        f"{blockquote('Ответьте «Да» или «Нет» на каждый вопрос. Правильность не проверяется. '
+                       f'Между показом вопроса и ответом — не менее {settings.yandex_answer_min_seconds} с, '
+                       f'иначе блокировка на {settings.yandex_cheat_ban_days} дн.')}",
         parse_mode="HTML",
         reply_markup=ym_quiz_intro_kb(),
     )
@@ -424,6 +458,7 @@ async def ym_quiz_start(
     message: Message,
     session_factory: async_sessionmaker[AsyncSession],
     state: FSMContext,
+    settings: Settings,
 ):
     async with session_factory() as session:
         u = await ensure_user(
@@ -434,16 +469,21 @@ async def ym_quiz_start(
             return
         if not await task_platform_is_yandex(session, ym.task_id):
             return
-        t = await get_task(session, ym.task_id)
-        if not t:
+        slots = await pick_random_quiz_slots(session, count=YANDEX_QUIZ_POOL_SIZE)
+        if not slots:
+            await message.answer(
+                f"В пуле меньше {YANDEX_QUIZ_POOL_SIZE} активных вопросов. Обратитесь к администратору.",
+            )
             return
-        questions = await list_yandex_questions_for_task(session, t)
-        if not questions:
-            await message.answer("Вопросы теста не настроены. Обратитесь к администратору.")
-            return
+        ym.quiz_slots = format_question_order(slots)
         ym.step = "question"
         ym.question_index = 0
+        ym.question_shown_at = datetime.utcnow()
         await save_ym_session(session, ym)
+        questions = await list_yandex_questions_for_ym_session(session, ym)
+        if len(questions) < YANDEX_QUIZ_POOL_SIZE:
+            await message.answer("Вопросы теста не настроены. Обратитесь к администратору.")
+            return
         q = questions[0]
         total = len(questions)
     await state.set_state(YandexMapsUserFSM.quiz)
@@ -477,6 +517,8 @@ async def ym_reset(
         ym.task_id = None
         ym.task_text_id = None
         ym.question_index = 0
+        ym.quiz_slots = None
+        ym.question_shown_at = None
         ym.step = "assign"
         task, claimed = await claim_yandex_assignment(
             session, u.id, u.gender, ym.region, pid
@@ -512,13 +554,25 @@ async def ym_answer(
             return
         if not await task_platform_is_yandex(session, ym.task_id):
             return
-        t = await get_task(session, ym.task_id)
-        questions = await list_yandex_questions_for_task(session, t)
+        if answer_is_too_fast(ym.question_shown_at, settings.yandex_answer_min_seconds):
+            await _handle_quiz_cheat(
+                message,
+                session_factory,
+                state,
+                settings,
+                user_id=u.id,
+                ym=ym,
+                min_seconds=settings.yandex_answer_min_seconds,
+                ban_days=settings.yandex_cheat_ban_days,
+            )
+            return
+        questions = await list_yandex_questions_for_ym_session(session, ym)
         if not questions:
             return
         nxt = ym.question_index + 1
         if nxt < len(questions):
             ym.question_index = nxt
+            ym.question_shown_at = datetime.utcnow()
             await save_ym_session(session, ym)
             q = questions[nxt]
             await message.answer(
@@ -528,9 +582,11 @@ async def ym_answer(
             )
             return
         freeze_h = settings.yandex_quiz_freeze_hours
+        ym.question_shown_at = None
         ym.step = "frozen"
         ym.freeze_until = datetime.utcnow() + timedelta(hours=freeze_h)
         await save_ym_session(session, ym)
+        t = await get_task(session, ym.task_id)
         reward = float(t.reward or 0) if t else 0.0
     await state.set_state(None)
     await message.answer(

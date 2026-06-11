@@ -154,6 +154,7 @@ class YandexMapsSession(Base):
     region: Mapped[str | None] = mapped_column(String(255), nullable=True)
     website_url: Mapped[str | None] = mapped_column(String(1024), nullable=True)
     question_index: Mapped[int] = mapped_column(Integer, default=0)
+    quiz_slots: Mapped[str | None] = mapped_column(String(64), nullable=True)
     question_shown_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     freeze_until: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
     review_sent_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)

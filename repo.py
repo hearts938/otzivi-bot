@@ -655,21 +655,6 @@ async def list_yandex_questions_by_order(
     return [by_slot[s] for s in order if s in by_slot]
 
 
-async def list_yandex_questions_for_task(
-    session: AsyncSession, task: Task | None
-) -> list[YandexMapsQuestion]:
-    """Вопросы теста только для заданий Яндекс Карт."""
-    if not task:
-        return []
-    p = await session.get(Platform, task.platform_id) if task.platform_id else None
-    if not p or not is_yandex_maps_slug(p.slug):
-        return []
-    order_csv = (task.yandex_question_order or "").strip()
-    if not order_csv:
-        order_csv = await get_yandex_quiz_default_order(session)
-    return await list_yandex_questions_by_order(session, order_csv)
-
-
 async def claim_yandex_assignment(
     session: AsyncSession,
     user_id: int,

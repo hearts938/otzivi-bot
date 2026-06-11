@@ -67,6 +67,5 @@ class AdminUsersBrowse(StatesGroup):
 
 
 class YandexQuizFSM(StatesGroup):
-    order = State()
     edit_slot = State()
     edit_body = State()

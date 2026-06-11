@@ -48,6 +48,8 @@ def _sqlite_add_columns(connection) -> None:
         add("tasks", "org_address", "VARCHAR(1024)")
         add("tasks", "region", "VARCHAR(255)")
         add("tasks", "yandex_question_order", "VARCHAR(64)")
+    if "yandex_maps_sessions" in names:
+        add("yandex_maps_sessions", "quiz_slots", "VARCHAR(64)")
     if "task_texts" in names:
         add("task_texts", "region", "VARCHAR(255)")
         add("task_texts", "text_number", "INTEGER")

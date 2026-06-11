@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 YANDEX_MAPS_SLUG = "yandex_maps"
+YANDEX_QUIZ_POOL_SIZE = 10
 YANDEX_QUIZ_MIN_COUNT = 10
 YANDEX_QUIZ_MAX_COUNT = 15
 YANDEX_QUIZ_MAX_SLOT = 15
