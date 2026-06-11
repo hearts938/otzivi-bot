@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% block title %}Баланс{% endblock %}
+{% block body %}
+<h1>Управление балансом</h1>
+<p>Начисление и списание с баланса к выплате (как в Telegram-боте: «Баланс»).</p>
+{% if msg %}<p class="alert alert-ok">{{ msg }}</p>{% endif %}
+{% if err %}<p class="alert alert-err">{{ err }}</p>{% endif %}
+<form method="post" action="/balance">
+  <div>
+    <label>Пользователь (@username или Telegram ID)<br/>
+      <input name="ref" type="text" value="{{ ref or '' }}" required/>
+    </label>
+  </div>
+  <div>
+    <label>Действие<br/>
+      <select name="action">
+        <option value="credit"{% if action == 'credit' %} selected{% endif %}>Начислить</option>
+        <option value="debit"{% if action == 'debit' %} selected{% endif %}>Списать</option>
+      </select>
+    </label>
+  </div>
+  <div>
+    <label>Сумма (₽)<br/>
+      <input name="amount" type="text" inputmode="decimal" value="{{ amount or '' }}" placeholder="100" required/>
+    </label>
+  </div>
+  <button type="submit" class="btn-primary">Применить</button>
+</form>
+<p><a href="/users/manage">Список пользователей</a></p>
+{% endblock %}

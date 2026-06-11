@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import asyncio
 from datetime import datetime
 from pathlib import Path
 from urllib.parse import quote
@@ -8,7 +7,7 @@ from urllib.parse import quote
 import pandas as pd
 
 from aiogram.exceptions import TelegramBadRequest, TelegramForbiddenError
-from aiogram.types import BufferedInputFile, InlineKeyboardButton, InlineKeyboardMarkup
+from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 from fastapi import APIRouter, Request, UploadFile
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
@@ -17,7 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from config import Settings
 from repo import (
     add_task_text,
-    adjust_user_balance,
+    apply_user_balance_change,
     count_approved_submissions,
     create_platform,
     create_customer_task,
@@ -41,6 +40,7 @@ from repo import (
     set_user_banned,
     update_platform_cooldown,
 )
+from services.broadcast import attachment_from_upload, run_broadcast
 from services.publish_scheduler import activate_due_texts
 from services.gender import gender_label
 from services.text_pool import build_pool_lines, parse_number_list
@@ -165,10 +165,53 @@ async def user_detail(request: Request, uid: int):
         f"активность (одобр.): сегодня {d_act}, неделя {w_act}, месяц {m_act}\n"
         f"статус: {act}"
     )
+    msg = request.query_params.get("msg")
+    err = request.query_params.get("err")
     return templates.TemplateResponse(
         "user_detail.html",
-        {"request": request, "uid": uid, "text": text, "banned": u.is_banned},
+        {
+            "request": request,
+            "uid": uid,
+            "text": text,
+            "banned": u.is_banned,
+            "balance": float(u.balance or 0),
+            "pending_balance": float(u.pending_balance or 0),
+            "msg": msg,
+            "err": err,
+        },
     )
+
+
+@router.post("/users/manage/{uid}/balance")
+async def user_balance(request: Request, uid: int):
+    r = _need_admin(request)
+    if r:
+        return r
+    form = await request.form()
+    action = (form.get("action") or "credit").strip()
+    credit = action != "debit"
+    raw = (form.get("amount") or "").strip().replace(",", ".").replace("−", "-").replace("–", "-")
+    if raw.startswith("+"):
+        raw = raw[1:].strip()
+    try:
+        amount = float(raw)
+    except ValueError:
+        return RedirectResponse(
+            f"/users/manage/{uid}?err={quote('Нужно число, например 100')}",
+            status_code=303,
+        )
+    if amount <= 0:
+        return RedirectResponse(
+            f"/users/manage/{uid}?err={quote('Сумма должна быть больше нуля')}",
+            status_code=303,
+        )
+    async with _sf(request)() as session:
+        u2 = await apply_user_balance_change(session, uid, amount, credit=credit)
+        if not u2:
+            return RedirectResponse("/users/manage", status_code=303)
+        op = "Начислено" if credit else "Списано"
+        flash = f"{op} {amount:.2f} ₽. Новый баланс: {u2.balance:.2f} ₽"
+    return RedirectResponse(f"/users/manage/{uid}?msg={quote(flash)}", status_code=303)
 
 
 @router.post("/users/manage/{uid}/ban")
@@ -300,7 +343,7 @@ async def broadcast_post(request: Request):
     form = await request.form()
     text = (form.get("text") or "").strip()
     btn = (form.get("btn") or "Старт").strip()[:64]
-    raw_photo = form.get("photo")
+    raw_file = form.get("attachment") or form.get("photo")
     bot = request.app.state.bot
     me = await bot.get_me()
     if not me.username:
@@ -311,28 +354,28 @@ async def broadcast_post(request: Request):
         )
     url = f"https://t.me/{me.username}?start=broadcast"
     kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text=btn, url=url)]])
-    photo_bytes: bytes | None = None
-    if isinstance(raw_photo, UploadFile) and raw_photo.filename:
-        photo_bytes = await raw_photo.read()
+    file_bytes: bytes | None = None
+    file_name: str | None = None
+    file_mime: str | None = None
+    if isinstance(raw_file, UploadFile) and raw_file.filename:
+        file_bytes = await raw_file.read()
+        file_name = raw_file.filename
+        file_mime = raw_file.content_type
+    attachment = attachment_from_upload(
+        file_bytes or b"",
+        filename=file_name,
+        mime_type=file_mime,
+    )
     async with _sf(request)() as session:
         rids = (await session.execute(select(User.telegram_id))).all()
     ids = [row[0] for row in rids]
-    ok = bad = 0
-    for tid in ids:
-        try:
-            if photo_bytes:
-                await bot.send_photo(
-                    tid,
-                    BufferedInputFile(photo_bytes, filename="cast.jpg"),
-                    caption=text[:1024],
-                    reply_markup=kb,
-                )
-            else:
-                await bot.send_message(tid, text[:3500], reply_markup=kb)
-            ok += 1
-        except (TelegramForbiddenError, TelegramBadRequest):
-            bad += 1
-        await asyncio.sleep(0.05)
+    ok, bad = await run_broadcast(
+        bot,
+        ids,
+        text=text,
+        reply_markup=kb,
+        attachment=attachment,
+    )
     msg = f"Успешно: {ok}, ошибок: {bad}"
     return templates.TemplateResponse("broadcast.html", {"request": request, "msg": msg, "err": None})
 
@@ -368,19 +411,8 @@ async def balance_get(request: Request):
     if r:
         return r
     return templates.TemplateResponse(
-        "form_simple.html",
-        {
-            "request": request,
-            "title": "Баланс",
-            "action": "/balance",
-            "submit": "Применить",
-            "fields": [
-                {"label": "Пользователь (@username или tg id)", "name": "ref", "type": "text"},
-                {"label": "Изменение (+/- число)", "name": "amount", "type": "text"},
-            ],
-            "msg": None,
-            "err": None,
-        },
+        "balance.html",
+        {"request": request, "msg": None, "err": None, "ref": None, "action": "credit", "amount": None},
     )
 
 
@@ -391,22 +423,36 @@ async def balance_post(request: Request):
         return r
     form = await request.form()
     ref = (form.get("ref") or "").strip()
+    action = (form.get("action") or "credit").strip()
+    credit = action != "debit"
+    raw = (form.get("amount") or "").strip().replace(",", ".").replace("−", "-").replace("–", "-")
+    if raw.startswith("+"):
+        raw = raw[1:].strip()
     try:
-        delta = float(str(form.get("amount")).replace(",", "."))
-    except Exception:
+        amount = float(raw)
+    except ValueError:
         return templates.TemplateResponse(
-            "form_simple.html",
+            "balance.html",
             {
                 "request": request,
-                "title": "Баланс",
-                "action": "/balance",
-                "submit": "Применить",
-                "fields": [
-                    {"label": "Пользователь", "name": "ref", "type": "text", "value": ref},
-                    {"label": "Изменение", "name": "amount", "type": "text"},
-                ],
                 "msg": None,
-                "err": "Нужно число",
+                "err": "Нужно число, например 100",
+                "ref": ref,
+                "action": action,
+                "amount": form.get("amount"),
+            },
+            status_code=400,
+        )
+    if amount <= 0:
+        return templates.TemplateResponse(
+            "balance.html",
+            {
+                "request": request,
+                "msg": None,
+                "err": "Сумма должна быть больше нуля",
+                "ref": ref,
+                "action": action,
+                "amount": form.get("amount"),
             },
             status_code=400,
         )
@@ -417,21 +463,22 @@ async def balance_post(request: Request):
         if not u:
             err = "Пользователь не найден"
         else:
-            u2 = await adjust_user_balance(session, u.id, delta)
-            msg = f"Новый баланс {u2.telegram_id}: {u2.balance:.2f}"
+            u2 = await apply_user_balance_change(session, u.id, amount, credit=credit)
+            op = "Начислено" if credit else "Списано"
+            pending = float(u2.pending_balance or 0)
+            msg = (
+                f"{op} {amount:.2f} ₽ пользователю {u2.telegram_id}. "
+                f"Баланс к выплате: {u2.balance:.2f} ₽, в ожидании: {pending:.2f} ₽"
+            )
     return templates.TemplateResponse(
-        "form_simple.html",
+        "balance.html",
         {
             "request": request,
-            "title": "Баланс",
-            "action": "/balance",
-            "submit": "Применить",
-            "fields": [
-                {"label": "Пользователь", "name": "ref", "type": "text", "value": ref},
-                {"label": "Изменение", "name": "amount", "type": "text"},
-            ],
             "msg": msg,
             "err": err,
+            "ref": ref,
+            "action": action,
+            "amount": None if msg else form.get("amount"),
         },
         status_code=400 if err else 200,
     )

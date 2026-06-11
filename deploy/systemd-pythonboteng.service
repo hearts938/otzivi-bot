@@ -1,0 +1,14 @@
+[Unit]
+Description=Telegram bot + web admin (run_all.py)
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/root/backend
+EnvironmentFile=/root/backend/.env
+ExecStart=/root/backend/venv/bin/python /root/backend/run_all.py
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

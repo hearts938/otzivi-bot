@@ -7,7 +7,10 @@
 <form method="post" action="/broadcast" enctype="multipart/form-data">
   <div><label>Текст<br/><textarea name="text" rows="6" cols="60" required></textarea></label></div>
   <div><label>Текст кнопки (start)<br/><input name="btn" type="text" value="Старт" required/></label></div>
-  <div><label>Фото (необязательно)<br/><input name="photo" type="file" accept="image/*"/></label></div>
+  <div><label>Фото или файл (необязательно)<br/>
+    <input name="attachment" type="file" accept="image/*,.pdf,.doc,.docx,.zip"/>
+    <small>Картинки отправятся как фото, остальное — как файл.</small>
+  </label></div>
   <button type="submit">Отправить всем</button>
 </form>
 {% endblock %}

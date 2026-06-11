@@ -2,9 +2,34 @@
 {% block title %}Пользователь{% endblock %}
 {% block body %}
 <h1>Пользователь</h1>
+{% if msg %}<p class="alert alert-ok">{{ msg }}</p>{% endif %}
+{% if err %}<p class="alert alert-err">{{ err }}</p>{% endif %}
 <pre>{{ text }}</pre>
-<form method="post" action="/users/manage/{{ uid }}/ban">
+
+<h2>Баланс</h2>
+<p>
+  К выплате: <strong>{{ "%.2f"|format(balance) }} ₽</strong><br/>
+  В ожидании: <strong>{{ "%.2f"|format(pending_balance) }} ₽</strong>
+</p>
+<form method="post" action="/users/manage/{{ uid }}/balance">
+  <div>
+    <label>Действие<br/>
+      <select name="action">
+        <option value="credit">Начислить</option>
+        <option value="debit">Списать</option>
+      </select>
+    </label>
+  </div>
+  <div>
+    <label>Сумма (₽)<br/>
+      <input name="amount" type="text" inputmode="decimal" placeholder="100" required/>
+    </label>
+  </div>
+  <button type="submit" class="btn-primary">Изменить баланс</button>
+</form>
+
+<form method="post" action="/users/manage/{{ uid }}/ban" style="margin-top:1.5rem">
   <button type="submit">{% if banned %}Разбанить{% else %}Забанить{% endif %}</button>
 </form>
-<p><a href="/users/manage">Назад</a></p>
+<p><a href="/users/manage">Назад</a> · <a href="/balance">Баланс по @username</a></p>
 {% endblock %}

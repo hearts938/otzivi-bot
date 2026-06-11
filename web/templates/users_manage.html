@@ -7,6 +7,7 @@
   <li>
     <a href="/users/manage/{{ u.id }}">
       @{{ u.username or u.telegram_id }} — tg {{ u.telegram_id }} —
+      баланс {{ "%.2f"|format(u.balance) }} ₽ —
       {% if u.is_banned %}забанен{% else %}активен{% endif %}
     </a>
   </li>
