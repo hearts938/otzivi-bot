@@ -11,7 +11,10 @@ from fastapi.staticfiles import StaticFiles
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 from starlette.middleware.sessions import SessionMiddleware
 
+import asyncio
+
 from config import Settings
+from services.reviews_stock import reviews_stock_scheduler_loop
 from web.routes import router as admin_web_router
 
 
@@ -35,6 +38,7 @@ def create_app(
                 default=DefaultBotProperties(parse_mode=ParseMode.HTML),
             )
             app.state._owns_bot = True
+        asyncio.create_task(reviews_stock_scheduler_loop(app.state.bot, session_factory))
         yield
         if app.state._owns_bot:
             await app.state.bot.session.close()

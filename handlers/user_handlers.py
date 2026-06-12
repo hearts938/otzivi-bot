@@ -4,6 +4,7 @@ import asyncio
 from typing import Any, Awaitable, Callable
 
 from aiogram import BaseMiddleware, F, Router
+from aiogram.exceptions import TelegramBadRequest
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import Message, TelegramObject
@@ -157,6 +158,7 @@ async def _send_customer_list(
     state: FSMContext,
     platform_id: int,
 ) -> None:
+    """Список заказчиков — запасной путь, если на сервисе несколько заданий."""
     async with session_factory() as session:
         u = await ensure_user(
             session,
@@ -175,7 +177,7 @@ async def _send_customer_list(
             session, u.id, u.gender, platform_id
         )
     if not tasks:
-        await message.answer("По этому сервису сейчас нет доступных заказчиков.")
+        await message.answer("По этому сервису сейчас нет доступных заданий.")
         await _send_platform_list(message, session_factory, state)
         return
     await state.update_data(tasks_platform_id=platform_id)
@@ -188,6 +190,114 @@ async def _send_customer_list(
         reply_markup=user_tasks_kb(labels),
         parse_mode="HTML",
     )
+
+
+async def _open_task_assignment(
+    message: Message,
+    session_factory: async_sessionmaker[AsyncSession],
+    state: FSMContext,
+    task_id: int,
+) -> bool:
+    settings = get_settings()
+    async with session_factory() as session:
+        await release_expired_task_claims(session, settings.task_claim_minutes)
+        u = await ensure_user(
+            session,
+            message.from_user.id,
+            message.from_user.username,
+            referred_by_id=None,
+            first_name=message.from_user.first_name,
+            last_name=message.from_user.last_name,
+        )
+        if not u.gender:
+            await message.answer(
+                "Сначала укажите пол в профиле (перезапустите бота командой /start).",
+                reply_markup=user_main_kb(),
+            )
+            return False
+        t = await get_task(session, task_id)
+        if not t or not t.active:
+            await message.answer("Задание недоступно.", reply_markup=user_main_kb())
+            return False
+        sub = await get_submission_for_user_task(session, u.id, task_id)
+        if sub:
+            await message.answer(
+                "Вы уже выполняли задание этого заказчика. "
+                "Повторно взять его нельзя.",
+                reply_markup=user_main_kb(),
+            )
+            return False
+        claimed = await get_user_claimed_text(session, u.id, task_id)
+        if claimed and await user_refused_text(session, u.id, claimed.id):
+            tt_fix = await session.get(TaskText, claimed.id)
+            if tt_fix and tt_fix.taken_by_user_id == u.id:
+                tt_fix.taken_by_user_id = None
+                tt_fix.claimed_at = None
+                await session.commit()
+            claimed = None
+        if claimed:
+            await state.update_data(tasks_platform_id=t.platform_id)
+            await _show_assignment(message, t, claimed, settings)
+            return True
+        visible = await list_tasks_available_for_user_on_platform(
+            session, u.id, u.gender, t.platform_id
+        )
+        if not any(x.id == task_id for x in visible):
+            await message.answer("Это задание сейчас недоступно.", reply_markup=user_main_kb())
+            return False
+        claimed = await claim_min_available_text(session, u.id, task_id, u.gender)
+    if not claimed:
+        await message.answer(
+            "Не удалось взять задание: свободных текстов нет или их уже заняли.",
+            reply_markup=user_main_kb(),
+        )
+        return False
+    await state.update_data(tasks_platform_id=t.platform_id)
+    await _show_assignment(message, t, claimed, settings)
+    return True
+
+
+async def _try_assign_platform(
+    message: Message,
+    session_factory: async_sessionmaker[AsyncSession],
+    state: FSMContext,
+    platform_id: int,
+) -> None:
+    """Сервис → сразу задание (без шага «выбор заказчика»), если задание одно."""
+    settings = get_settings()
+    async with session_factory() as session:
+        await release_expired_task_claims(session, settings.task_claim_minutes)
+        u = await ensure_user(
+            session,
+            message.from_user.id,
+            message.from_user.username,
+            referred_by_id=None,
+            first_name=message.from_user.first_name,
+            last_name=message.from_user.last_name,
+        )
+        if not u.gender:
+            await message.answer(
+                "Сначала укажите пол в профиле (перезапустите бота командой /start).",
+                reply_markup=user_main_kb(),
+            )
+            return
+        p = await session.get(Platform, platform_id)
+        if not p or not p.active:
+            await message.answer("Сервис недоступен.", reply_markup=user_main_kb())
+            return
+        tasks = await list_tasks_available_for_user_on_platform(
+            session, u.id, u.gender, platform_id
+        )
+    if not tasks:
+        await message.answer(
+            "По этому сервису сейчас нет доступных заданий.",
+            reply_markup=user_main_kb(),
+        )
+        return
+    if len(tasks) > 1:
+        await _send_customer_list(message, session_factory, state, platform_id)
+        return
+    await _open_task_assignment(message, session_factory, state, tasks[0].id)
 
 
 @router.message(F.text == BTN_TASKS)
@@ -226,6 +336,11 @@ async def msg_platform_pick(
     async with session_factory() as session:
         p = await session.get(Platform, pid)
         if p and is_yandex_maps_slug(p.slug):
+            await message.answer(
+                "Яндекс Карты открываются отдельным сценарием. "
+                "Нажмите «Задания» и снова выберите Яндекс Карты.",
+                reply_markup=user_main_kb(),
+            )
             return
         u = await ensure_user(
             session,
@@ -237,7 +352,7 @@ async def msg_platform_pick(
         )
         await reset_incomplete_ym_flow(session, u.id)
     await state.clear()
-    await _send_customer_list(message, session_factory, state, pid)
+    await _try_assign_platform(message, session_factory, state, pid)
 
 
 @router.message(F.text.func(lambda t: parse_task_pick(t) is not None))
@@ -249,65 +364,26 @@ async def msg_task_open(
     tid = parse_task_pick(message.text or "")
     if tid is None:
         return
-    settings = get_settings()
-    async with session_factory() as session:
-        await release_expired_task_claims(session, settings.task_claim_minutes)
-        u = await ensure_user(
-            session,
-            message.from_user.id,
-            message.from_user.username,
-            referred_by_id=None,
-            first_name=message.from_user.first_name,
-            last_name=message.from_user.last_name,
-        )
-        t = await get_task(session, tid)
-        if not t or not t.active:
-            await message.answer("Задание недоступно.", reply_markup=user_main_kb())
-            return
-        sub = await get_submission_for_user_task(session, u.id, tid)
-        if sub:
-            await message.answer(
-                "Вы уже выполняли задание этого заказчика. "
-                "Повторно взять его нельзя.",
-                reply_markup=user_main_kb(),
-            )
-            return
-        claimed = await get_user_claimed_text(session, u.id, tid)
-        if claimed and await user_refused_text(session, u.id, claimed.id):
-            tt_fix = await session.get(TaskText, claimed.id)
-            if tt_fix and tt_fix.taken_by_user_id == u.id:
-                tt_fix.taken_by_user_id = None
-                tt_fix.claimed_at = None
-                await session.commit()
-            claimed = None
-        if claimed:
-            await state.update_data(tasks_platform_id=t.platform_id)
-            await _show_assignment(message, t, claimed, settings)
-            return
-        visible = await list_tasks_available_for_user_on_platform(
-            session, u.id, u.gender, t.platform_id
-        )
-        if not any(x.id == tid for x in visible):
-            await message.answer("Это задание сейчас недоступно.", reply_markup=user_main_kb())
-            return
-        claimed = await claim_min_available_text(session, u.id, tid, u.gender)
-    await state.update_data(tasks_platform_id=t.platform_id)
-    if not claimed:
-        await message.answer(
-            "Не удалось взять задание: свободных текстов нет или их уже заняли.",
-            reply_markup=user_main_kb(),
-        )
-        return
-    await _show_assignment(message, t, claimed, settings)
+    await _open_task_assignment(message, session_factory, state, tid)
 
 
 async def _show_assignment(message: Message, task, claimed, settings: Settings) -> None:
-    await message.answer(
-        assignment_message(task, claimed, claim_minutes=settings.task_claim_minutes),
-        reply_markup=user_task_actions_kb(),
-        parse_mode="HTML",
-        disable_web_page_preview=False,
-    )
+    text = assignment_message(task, claimed, claim_minutes=settings.task_claim_minutes)
+    try:
+        await message.answer(
+            text,
+            reply_markup=user_task_actions_kb(),
+            parse_mode="HTML",
+            disable_web_page_preview=False,
+        )
+    except TelegramBadRequest:
+        await message.answer(
+            text.replace("<b>", "").replace("</b>", "").replace("<blockquote>", "").replace(
+                "</blockquote>", ""
+            ),
+            reply_markup=user_task_actions_kb(),
+            disable_web_page_preview=False,
+        )
 
 
 @router.message(F.text == BTN_TASK_REFUSE)
@@ -347,10 +423,7 @@ async def msg_refuse(
         "Вы можете взять другое задание.",
         reply_markup=user_main_kb(),
     )
-    if pid:
-        await _send_customer_list(message, session_factory, state, int(pid))
-    else:
-        await _send_platform_list(message, session_factory, state)
+    await _send_platform_list(message, session_factory, state)
 
 
 @router.message(F.text == BTN_TASK_DONE)

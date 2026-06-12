@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from config import Settings
 from database.models import Platform, SubmissionStatus, TaskText
 from handlers.filters import OnboardingCompletedFilter
-from handlers.formatting import blockquote, section
+from handlers.formatting import blockquote, esc_html, section
 from handlers.keyboards import (
     BTN_BACK_MENU,
     BTN_BACK_PLATFORMS,
@@ -35,6 +35,7 @@ from handlers.yandex_maps.keyboards import (
     ym_gender_kb,
     ym_question_kb,
     ym_quiz_intro_kb,
+    ym_website_kb,
     ym_yes_no_kb,
 )
 from handlers.yandex_maps.states import YandexMapsUserFSM
@@ -96,6 +97,7 @@ async def ym_platform_entry(
     async with session_factory() as session:
         pid = await _platform_id_from_pick(session, message.text)
         if pid is None:
+            await message.answer("Сервис недоступен.", reply_markup=user_main_kb())
             return
         u = await ensure_user(
             session,
@@ -328,19 +330,26 @@ async def _send_org_info(message: Message, session_factory: async_sessionmaker[A
         t = await get_task(session, task_id)
     if not t:
         return
-    addr = t.org_address or t.description or "—"
-    reg = t.region or "—"
+    addr = (t.org_address or "").strip() or "не указан администратором"
+    reg = t.region or "любой"
+    maps_link = (t.link or "").strip()
+    maps_line = (
+        f"\n<b>Яндекс Карты:</b> {esc_html(maps_link)}"
+        if maps_link
+        else "\n<b>Яндекс Карты:</b> ссылка не задана"
+    )
     body = (
-        f"<b>Организация:</b> {t.customer_name or t.title}\n"
-        f"<b>Регион:</b> {reg}\n"
-        f"<b>Адрес:</b> {addr}\n"
-        f"<b>ID задания:</b> <code>{t.id}</code>"
+        f"<b>Организация:</b> {esc_html(t.customer_name or t.title)}\n"
+        f"<b>Регион:</b> {esc_html(reg)}\n"
+        f"<b>Адрес:</b> {esc_html(addr)}"
+        f"{maps_line}"
     )
     await message.answer(
         f"🗺 <b>Задание назначено</b>\n\n{blockquote(body)}\n\n"
-        f"{blockquote('Нашли организацию на карте?')}",
+        f"{blockquote('Найдите эту организацию в Яндекс Картах по ссылке выше. Нашли?')}",
         parse_mode="HTML",
         reply_markup=ym_yes_no_kb(),
+        disable_web_page_preview=False,
     )
 
 
@@ -384,10 +393,18 @@ async def ym_found(
         ym.step = "website"
         await save_ym_session(session, ym)
     await state.set_state(YandexMapsUserFSM.website)
+    site_hint = (
+        "Пришлите ссылку на официальный сайт компании (начинается с https://). "
+        "Это не ссылка на Яндекс Карты — карты вы уже открыли на предыдущем шаге."
+    )
+    no_site_hint = (
+        "Если у организации нет сайта — пришлите ссылку на её страницу "
+        "в соцсети или каталоге (тоже https://)."
+    )
     await message.answer(
-        "Откройте сайт организации и пришлите <b>ссылку на сайт</b> (http…):",
+        f"🌐 <b>Сайт организации</b>\n\n{blockquote(site_hint)}\n\n{blockquote(no_site_hint)}",
         parse_mode="HTML",
-        reply_markup=ym_yes_no_kb(),
+        reply_markup=ym_website_kb(),
     )
 
 
@@ -400,9 +417,28 @@ async def ym_website(
 ):
     url = (message.text or "").strip()
     if url in {BTN_YM_YES, BTN_YM_NO}:
+        await message.answer(
+            "Сейчас нужна ссылка на <b>сайт организации</b> (https://…), а не «Да»/«Нет».",
+            parse_mode="HTML",
+            reply_markup=ym_website_kb(),
+        )
+        return
+    if url == BTN_BACK_PLATFORMS:
+        from handlers.user_handlers import _send_platform_list
+
+        await state.clear()
+        async with session_factory() as session:
+            u = await ensure_user(
+                session, message.from_user.id, message.from_user.username, referred_by_id=None
+            )
+            await clear_ym_session(session, u.id)
+        await _send_platform_list(message, session_factory, state)
         return
     if len(url) < 8 or not url.startswith(("http://", "https://")):
-        await message.answer("Нужна ссылка, начинающаяся с http:// или https://")
+        await message.answer(
+            "Нужна ссылка на сайт организации: начинается с https:// (не ссылка на Яндекс Карты).",
+            reply_markup=ym_website_kb(),
+        )
         return
     data = await state.get_data()
     pid = data.get("ym_platform_id")

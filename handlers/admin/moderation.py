@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import asyncio
+
 from aiogram import F, Router
 from aiogram.exceptions import TelegramBadRequest, TelegramForbiddenError
 from aiogram.fsm.context import FSMContext
@@ -61,7 +63,9 @@ async def adm_import_file(
     file = await message.bot.get_file(doc.file_id)
     buf = await message.bot.download_file(file.file_path)
     raw = buf.read()
-    items, errs = parse_review_texts_excel(raw, settings.app_timezone)
+    items, errs = await asyncio.to_thread(
+        parse_review_texts_excel, raw, settings.app_timezone
+    )
     if pool_tid:
         async with session_factory() as session:
             added, notes = await import_review_texts_to_task(session, int(pool_tid), items)

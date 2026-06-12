@@ -20,6 +20,7 @@ class ImportedReviewText:
     body: str
     publish_at: datetime
     reward: float = 0.0
+    org_address: str | None = None
 
 
 def _norm(s: str) -> str:
@@ -92,9 +93,23 @@ def _parse_publish_date(row: dict, tz_name: str) -> datetime | None:
     return publish_at_midnight(d, tz_name)
 
 
+def looks_like_xlsx(filename: str | None, raw: bytes) -> bool:
+    """xlsx — ZIP-архив (PK); расширение иногда отсутствует или неверное."""
+    if len(raw) >= 2 and raw[:2] == b"PK":
+        return True
+    return (filename or "").lower().endswith(".xlsx")
+
+
 def parse_review_texts_excel(file_bytes: bytes, tz_name: str) -> tuple[list[ImportedReviewText], list[str]]:
     errors: list[str] = []
-    df = pd.read_excel(io.BytesIO(file_bytes), engine="openpyxl")
+    try:
+        df = pd.read_excel(io.BytesIO(file_bytes), engine="openpyxl")
+    except Exception as exc:
+        return [], [
+            "Не удалось прочитать файл как .xlsx. "
+            "Сохраните книгу в Excel: «Файл → Сохранить как → Книга Excel (.xlsx)».",
+            f"Технически: {exc}",
+        ]
     if df.empty:
         return [], ["Файл пустой."]
     df.columns = [str(c).strip() for c in df.columns]
@@ -110,6 +125,7 @@ def parse_review_texts_excel(file_bytes: bytes, tz_name: str) -> tuple[list[Impo
             errors.append(f"Строка {int(idx) + 2}: нет ссылки.")
             continue
         customer = _pick_row(r, "заказчик", "customer", "клиент", "имя заказчика")
+        address = _pick_row(r, "адрес", "address", "org_address", "адрес организации")
         gender_raw = _pick_row(r, "пол", "gender", "sex")
         gender = parse_gender(gender_raw) if gender_raw else None
         if not gender:
@@ -132,6 +148,7 @@ def parse_review_texts_excel(file_bytes: bytes, tz_name: str) -> tuple[list[Impo
                 body=body[:20000],
                 publish_at=pub,
                 reward=_parse_reward(r),
+                org_address=address[:1024] if address else None,
             )
         )
     return items, errors

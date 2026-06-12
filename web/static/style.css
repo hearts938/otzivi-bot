@@ -12,15 +12,41 @@ button, input[type=submit] { cursor: pointer; }
   margin: 1rem 0 1.5rem;
   background: #f6f9ff;
 }
-.upload-label { display: block; cursor: pointer; }
-.upload-title { display: block; font-size: 1.1rem; font-weight: 600; margin-bottom: 0.25rem; }
-.upload-hint { display: block; color: #555; font-size: 0.9rem; margin-bottom: 0.75rem; }
-.upload-box input[type=file] {
-  display: block;
-  width: 100%;
-  max-width: 420px;
+.upload-box.dragover {
+  border-color: #2563eb;
+  background: #e8f0fe;
+}
+.upload-box.has-file {
+  border-style: solid;
+  border-color: #4caf50;
+}
+.upload-input-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+.upload-prompt {
+  cursor: pointer;
+  text-align: center;
+  padding: 2rem 1rem;
   margin-bottom: 1rem;
-  padding: 0.5rem;
+  border-radius: 8px;
+  user-select: none;
+}
+.upload-prompt:hover { background: rgba(37, 99, 235, 0.06); }
+.upload-title { display: block; font-size: 1.1rem; font-weight: 600; margin-bottom: 0.25rem; }
+.upload-hint { display: block; color: #555; font-size: 0.9rem; }
+.upload-filename {
+  margin: 0.75rem 0 0;
+  font-weight: 600;
+  color: #1b5e20;
+  word-break: break-all;
 }
 .btn-primary {
   background: #2563eb;

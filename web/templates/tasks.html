@@ -5,7 +5,12 @@
 <h2>Создать заказчика</h2>
 <form method="post" action="/tasks/add">
   <div><label>Имя заказчика <input name="customer_name" required/></label></div>
-  <div><label>Ссылка на место/проект <input name="link" required placeholder="https://..."/></label></div>
+  <div><label>Ссылка
+    <input name="link" required placeholder="Для Яндекс Карт: https://yandex.ru/maps/…"/>
+  </label></div>
+  <div><label>Адрес организации (для Яндекс Карт)
+    <input name="org_address" placeholder="г. Москва, ул. Примерная, 1"/>
+  </label></div>
   <div><label>Платформа
     <select name="platform_id">
       {% for p in platforms %}

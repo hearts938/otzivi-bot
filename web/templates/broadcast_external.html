@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% block title %}Рассылка на другое{% endblock %}
+{% block body %}
+<h1>Рассылка на другое</h1>
+<p>Сообщение всем пользователям: <strong>текст + кнопка</strong> со ссылкой на сторонний ресурс (сайт, канал, форма и т.д.).</p>
+{% if msg %}<p class="alert alert-ok">{{ msg }}</p>{% endif %}
+{% if err %}<p class="alert alert-err">{{ err }}</p>{% endif %}
+<form method="post" action="/broadcast-external" enctype="multipart/form-data">
+  <div><label>Текст<br/><textarea name="text" rows="6" cols="60" required></textarea></label></div>
+  <div><label>Текст кнопки<br/><input name="btn" type="text" value="Перейти" required maxlength="64"/></label></div>
+  <div><label>Ссылка кнопки<br/>
+    <input name="url" type="url" required placeholder="https://example.com/..." style="width:100%;max-width:520px"/>
+  </label></div>
+  <div><label>Фото или файл (необязательно)<br/>
+    <input name="attachment" type="file" accept="image/*,.pdf,.doc,.docx,.zip"/>
+  </label></div>
+  <button type="submit" class="btn-primary">Отправить всем</button>
+</form>
+<p><a href="/broadcast">← Обычная рассылка (кнопка «Старт» в бот)</a></p>
+{% endblock %}

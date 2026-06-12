@@ -22,6 +22,7 @@ from handlers import (
     yandex_maps_router,
 )
 from services.publish_scheduler import publish_scheduler_loop
+from services.reviews_stock import reviews_stock_scheduler_loop
 from services.yandex_maps_scheduler import yandex_maps_scheduler_loop
 
 logger = logging.getLogger(__name__)
@@ -37,6 +38,7 @@ def main() -> None:
         await init_db(engine, session_factory)
         asyncio.create_task(publish_scheduler_loop(session_factory))
         asyncio.create_task(yandex_maps_scheduler_loop(bot, session_factory))
+        asyncio.create_task(reviews_stock_scheduler_loop(bot, session_factory))
         logger.info("База данных готова.")
 
     async def inject_session(_handler, event: TelegramObject, data: dict):

@@ -21,14 +21,15 @@
 </div>
 {% endif %}
 
-<div class="upload-box">
-  <form method="post" action="/import" enctype="multipart/form-data">
-    <label class="upload-label">
-      <span class="upload-title">Выберите файл .xlsx</span>
-      <span class="upload-hint">или перетащите в поле ниже (поддерживается выбор файла)</span>
-      <input type="file" name="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" required/>
-    </label>
-    <button type="submit" class="btn-primary">Загрузить и импортировать</button>
+<div class="upload-box" id="import-drop-zone">
+  <form method="post" action="/import" enctype="multipart/form-data" id="import-form">
+    <input type="file" name="file" id="import-file" class="upload-input-hidden" accept=".xlsx"/>
+    <div class="upload-prompt" id="import-prompt">
+      <span class="upload-title">Перетащите файл .xlsx сюда</span>
+      <span class="upload-hint">или нажмите, чтобы выбрать на диске</span>
+      <p class="upload-filename" id="import-filename" hidden></p>
+    </div>
+    <button type="submit" class="btn-primary" id="import-submit">Загрузить и импортировать</button>
   </form>
 </div>
 
@@ -38,11 +39,65 @@
     <tr><th>Колонка</th><th>Описание</th></tr>
     <tr><td>Номер</td><td>Номер текста в пуле заказчика</td></tr>
     <tr><td>Заказчик</td><td>Имя (опционально; иначе создаётся по ссылке)</td></tr>
-    <tr><td>Ссылка</td><td>Ссылка на место/заведение (одна ссылка = один заказчик)</td></tr>
+    <tr><td>Ссылка</td><td>Для Яндекс Карт — ссылка на организацию в Яндекс Картах (одна ссылка = один заказчик)</td></tr>
+    <tr><td>Адрес</td><td>Адрес организации (опционально; для карточки в боте)</td></tr>
     <tr><td>Оплата / Вознаграждение</td><td>Сумма в ₽ за один одобренный отзыв (опционально)</td></tr>
     <tr><td>Пол</td><td><code>М</code> или <code>Ж</code> — кому показывать текст после опроса</td></tr>
     <tr><td>Текст</td><td>Готовый текст отзыва</td></tr>
     <tr><td>Дата публикации</td><td>День, с <strong>00:00</strong> ({{ timezone }}) текст станет доступен в боте</td></tr>
   </table>
 </section>
+
+<script>
+(function () {
+  var zone = document.getElementById("import-drop-zone");
+  var input = document.getElementById("import-file");
+  var prompt = document.getElementById("import-prompt");
+  var nameEl = document.getElementById("import-filename");
+  if (!zone || !input) return;
+
+  function looksXlsx(file) {
+    var n = (file.name || "").toLowerCase();
+    return n.endsWith(".xlsx") || n.endsWith(".xls");
+  }
+
+  function setFile(file) {
+    if (!file) return;
+    if (!looksXlsx(file)) {
+      alert("Нужен файл .xlsx (старый .xls не поддерживается — сохраните как «Книга Excel»).");
+      return;
+    }
+    var dt = new DataTransfer();
+    dt.items.add(file);
+    input.files = dt.files;
+    nameEl.textContent = file.name;
+    nameEl.hidden = false;
+    zone.classList.add("has-file");
+  }
+
+  prompt.addEventListener("click", function () { input.click(); });
+  input.addEventListener("change", function () {
+    if (input.files && input.files[0]) setFile(input.files[0]);
+  });
+
+  ["dragenter", "dragover"].forEach(function (ev) {
+    zone.addEventListener(ev, function (e) {
+      e.preventDefault();
+      e.stopPropagation();
+      zone.classList.add("dragover");
+    });
+  });
+  ["dragleave", "drop"].forEach(function (ev) {
+    zone.addEventListener(ev, function (e) {
+      e.preventDefault();
+      e.stopPropagation();
+      zone.classList.remove("dragover");
+    });
+  });
+  zone.addEventListener("drop", function (e) {
+    var files = e.dataTransfer && e.dataTransfer.files;
+    if (files && files.length) setFile(files[0]);
+  });
+})();
+</script>
 {% endblock %}

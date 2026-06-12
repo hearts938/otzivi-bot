@@ -44,6 +44,8 @@ A_USERS_MGMT = "👥 Управление пользователями"
 A_USERS_LIST = "📋 Список пользователей"
 BTN_BACK_USERS_MENU = "◀️ Пользователи"
 A_BROADCAST = "📣 Рассылка"
+A_BROADCAST_EXTERNAL = "🔗 Рассылка на другое"
+A_REVIEWS_STOCK = "📊 Детализация по отзывам"
 A_FINANCE = "💰 Финансы"
 A_BALANCE = "💳 Баланс"
 BTN_BALANCE_CREDIT = "➕ Начислить"
@@ -70,6 +72,8 @@ ADMIN_MAIN_BUTTONS = frozenset({
     A_USERS_LIST,
     BTN_BACK_USERS_MENU,
     A_BROADCAST,
+    A_BROADCAST_EXTERNAL,
+    A_REVIEWS_STOCK,
     A_FINANCE,
     A_BALANCE,
     A_STARS,
@@ -198,7 +202,7 @@ def admin_users_page_kb(
 
 
 def user_task_actions_kb() -> ReplyKeyboardMarkup:
-    return _kb(_rows(BTN_TASK_DONE, BTN_TASK_REFUSE, BTN_BACK_TASKS))
+    return _kb(_rows(BTN_TASK_DONE, BTN_TASK_REFUSE, BTN_BACK_PLATFORMS))
 
 
 def onboarding_gender_kb() -> ReplyKeyboardMarkup:
@@ -210,6 +214,8 @@ def admin_root_kb() -> ReplyKeyboardMarkup:
         _rows(
             A_USERS_MGMT,
             A_BROADCAST,
+            A_BROADCAST_EXTERNAL,
+            A_REVIEWS_STOCK,
             A_FINANCE,
             A_BALANCE,
             A_STARS,

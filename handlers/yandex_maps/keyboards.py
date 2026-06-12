@@ -30,6 +30,11 @@ def ym_yes_no_kb():
     return _kb(_rows(BTN_YM_YES, BTN_YM_NO))
 
 
+def ym_website_kb() -> ReplyKeyboardMarkup:
+    """Только «назад» — на этом шаге нужна ссылка, не Да/Нет."""
+    return _kb(_rows(BTN_BACK_PLATFORMS))
+
+
 def ym_quiz_intro_kb():
     return _kb(_rows(BTN_YM_START, BTN_YM_REFUSE))
 

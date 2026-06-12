@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% block title %}Детализация по отзывам{% endblock %}
+{% block body %}
+<h1>Детализация по отзывам</h1>
+<p>
+  Остаток текстов в пуле по платформам.
+  Автоматическая рассылка всем <code>ADMIN_IDS</code> —
+  каждый день в <strong>{{ report_time }}</strong> ({{ timezone }}).
+</p>
+{% if msg %}<p class="alert alert-ok">{{ msg }}</p>{% endif %}
+{% if err %}<p class="alert alert-err">{{ err }}</p>{% endif %}
+
+<form method="post" action="/reviews-stock/send" style="margin:1rem 0">
+  <button type="submit" class="btn-primary">Отправить отчёт админам в Telegram сейчас</button>
+</form>
+
+{% if rows %}
+<table>
+  <tr>
+    <th>Платформа</th>
+    <th>Свободно</th>
+    <th>М</th>
+    <th>Ж</th>
+    <th>В работе</th>
+    <th>Скоро выйдут</th>
+  </tr>
+  {% for r in rows %}
+  <tr>
+    <td>{{ r.platform_name }}</td>
+    <td><strong>{{ r.free_total }}</strong></td>
+    <td>{{ r.free_male }}</td>
+    <td>{{ r.free_female }}</td>
+    <td>{{ r.in_work }}</td>
+    <td>{{ r.scheduled }}</td>
+  </tr>
+  {% endfor %}
+  <tr>
+    <td><strong>Итого</strong></td>
+    <td><strong>{{ total_free }}</strong></td>
+    <td colspan="4"></td>
+  </tr>
+</table>
+{% else %}
+<p>Нет данных по активным платформам.</p>
+{% endif %}
+{% endblock %}

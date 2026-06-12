@@ -11,6 +11,13 @@ class BroadcastFSM(StatesGroup):
     photo = State()
 
 
+class BroadcastExternalFSM(StatesGroup):
+    text = State()
+    button = State()
+    url = State()
+    photo = State()
+
+
 class BalanceFSM(StatesGroup):
     user_ref = State()
     action = State()

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from html import escape as html_escape
+
 from aiogram.types import User as TgUser
 
 from database.models import SupportTicket, User
@@ -9,13 +11,17 @@ from services.gender import gender_label
 from services.reward_input import format_reward_rub
 
 
+def esc_html(text: object) -> str:
+    return html_escape(str(text or ""), quote=False)
+
+
 def blockquote(body: str) -> str:
-    body = (body or "—").strip()
+    body = esc_html((body or "—").strip())
     return f"<blockquote>{body}</blockquote>"
 
 
 def section(title: str, body: str) -> str:
-    return f"<b>{title}</b>\n{blockquote(body)}"
+    return f"<b>{esc_html(title)}</b>\n{blockquote(body)}"
 
 
 def tg_peer_lines(tg: TgUser) -> str:
@@ -169,7 +175,7 @@ def tasks_menu_entry_text(platform_count: int, *, claim_minutes: int = 60) -> st
     return (
         f"📋 <b>Задания</b>\n\n"
         f"{section('Правила', rules)}\n\n"
-        f"{blockquote(f'Выберите сервис (Яндекс, Google и т.д.). Доступно: {platform_count}.')}"
+        f"{blockquote(f'Выберите сервис — бот сразу выдаст задание. Доступно: {platform_count}.')}"
     )
 
 
@@ -179,7 +185,7 @@ def platforms_list_header(count: int) -> str:
 
 def platform_tasks_header(platform_name: str, count: int) -> str:
     return (
-        f"📋 <b>{platform_name}</b>\n\n"
+        f"📋 <b>{esc_html(platform_name)}</b>\n\n"
         f"{blockquote(f'Шаг 2: выберите заказчика. Доступно: {count}.')}"
     )
 
@@ -236,8 +242,8 @@ ASSIGNMENT_WARNING = (
 def assignment_message(task, claimed, *, claim_minutes: int = 60, minutes_left: int | None = None) -> str:
     from datetime import datetime
 
-    link = task.link or "—"
-    text_body = claimed.body or "—"
+    link = esc_html(task.link or "—")
+    text_body = esc_html(claimed.body or "—")
     num = claimed.text_number or claimed.id
     pay = format_reward_rub(task.reward) if task.reward and task.reward > 0 else "не указана"
     left = minutes_left

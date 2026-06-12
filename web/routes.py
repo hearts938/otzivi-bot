@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from datetime import datetime
 from pathlib import Path
 from urllib.parse import quote
@@ -49,13 +50,22 @@ from repo import (
     set_user_banned,
     update_platform_cooldown,
 )
-from services.broadcast import attachment_from_upload, read_upload_file, run_broadcast
+from services.broadcast import (
+    attachment_from_upload,
+    parse_external_button_url,
+    read_upload_file,
+    run_broadcast,
+)
 from services.rewards import approve_submission, reject_submission
+from services.reviews_stock import (
+    fetch_platform_review_stock,
+    send_reviews_stock_to_admins,
+)
 from services.support_admin import deliver_support_reply, reject_support_ticket
 from services.publish_scheduler import activate_due_texts
 from services.gender import gender_label
 from services.text_pool import build_pool_lines, parse_number_list
-from services.texts_import import parse_review_texts_excel
+from services.texts_import import looks_like_xlsx, parse_review_texts_excel
 from services.timezone_util import publish_at_midnight
 from services.admin_stats import list_platforms, platform_snapshot, user_activity_bundle
 from services.yandex_maps import YANDEX_QUIZ_POOL_SIZE
@@ -286,19 +296,6 @@ async def import_post(request: Request):
             },
             status_code=400,
         )
-    name = raw_file.filename.lower()
-    if not name.endswith(".xlsx"):
-        return templates.TemplateResponse(
-            "import_texts.html",
-            {
-                "request": request,
-                "msg": None,
-                "err": "Нужен файл в формате .xlsx",
-                "warnings": None,
-                "timezone": settings.app_timezone,
-            },
-            status_code=400,
-        )
     raw = await raw_file.read()
     if not raw:
         return templates.TemplateResponse(
@@ -312,7 +309,21 @@ async def import_post(request: Request):
             },
             status_code=400,
         )
-    items, parse_errs = parse_review_texts_excel(raw, settings.app_timezone)
+    if not looks_like_xlsx(raw_file.filename, raw):
+        return templates.TemplateResponse(
+            "import_texts.html",
+            {
+                "request": request,
+                "msg": None,
+                "err": "Нужен файл Excel .xlsx (не .xls). Сохраните книгу как «Книга Excel (.xlsx)».",
+                "warnings": None,
+                "timezone": settings.app_timezone,
+            },
+            status_code=400,
+        )
+    items, parse_errs = await asyncio.to_thread(
+        parse_review_texts_excel, raw, settings.app_timezone
+    )
     if parse_errs and not items:
         return templates.TemplateResponse(
             "import_texts.html",
@@ -413,6 +424,129 @@ async def broadcast_post(
         media = ", с файлом"
     msg = f"Успешно: {ok}, ошибок: {bad}{media}"
     return templates.TemplateResponse("broadcast.html", {"request": request, "msg": msg, "err": None})
+
+
+@router.get("/reviews-stock", response_class=HTMLResponse)
+async def reviews_stock_get(request: Request):
+    r = _need_admin(request)
+    if r:
+        return r
+    settings = _settings(request)
+    async with _sf(request)() as session:
+        stock = await fetch_platform_review_stock(session)
+    total_free = sum(x.free_total for x in stock)
+    report_time = (
+        f"{settings.reviews_stock_report_hour:02d}:"
+        f"{settings.reviews_stock_report_minute:02d}"
+    )
+    return templates.TemplateResponse(
+        "reviews_stock.html",
+        {
+            "request": request,
+            "rows": stock,
+            "total_free": total_free,
+            "timezone": settings.app_timezone,
+            "report_time": report_time,
+            "msg": request.query_params.get("msg"),
+            "err": request.query_params.get("err"),
+        },
+    )
+
+
+@router.post("/reviews-stock/send")
+async def reviews_stock_send_now(request: Request):
+    r = _need_admin(request)
+    if r:
+        return r
+    settings = _settings(request)
+    bot = request.app.state.bot
+    if not settings.admin_ids:
+        return RedirectResponse(
+            "/reviews-stock?err=" + quote("ADMIN_IDS не задан в .env"),
+            status_code=303,
+        )
+    ok, bad = await send_reviews_stock_to_admins(
+        bot, request.app.state.session_factory, settings
+    )
+    return RedirectResponse(
+        f"/reviews-stock?msg={quote(f'Отправлено: {ok}, ошибок: {bad}')}",
+        status_code=303,
+    )
+
+
+@router.get("/broadcast-external", response_class=HTMLResponse)
+async def broadcast_external_get(request: Request):
+    r = _need_admin(request)
+    if r:
+        return r
+    return templates.TemplateResponse(
+        "broadcast_external.html",
+        {"request": request, "msg": None, "err": None},
+    )
+
+
+@router.post("/broadcast-external", response_class=HTMLResponse)
+async def broadcast_external_post(
+    request: Request,
+    text: str = Form(...),
+    btn: str = Form("Перейти"),
+    url: str = Form(...),
+    attachment: UploadFile | None = File(default=None),
+):
+    r = _need_admin(request)
+    if r:
+        return r
+    text = (text or "").strip()
+    btn = (btn or "Перейти").strip()[:64]
+    link = parse_external_button_url(url)
+    if not link:
+        return templates.TemplateResponse(
+            "broadcast_external.html",
+            {
+                "request": request,
+                "msg": None,
+                "err": "Нужна ссылка, начинающаяся с http:// или https://",
+            },
+            status_code=400,
+        )
+    kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text=btn, url=link)]])
+    bot = request.app.state.bot
+    file_bytes, file_name, file_mime = await read_upload_file(attachment)
+    if attachment and attachment.filename and not file_bytes:
+        return templates.TemplateResponse(
+            "broadcast_external.html",
+            {
+                "request": request,
+                "msg": None,
+                "err": "Файл не загрузился. Проверьте размер и попробуйте снова.",
+            },
+            status_code=400,
+        )
+    attachment_data = attachment_from_upload(
+        file_bytes,
+        filename=file_name,
+        mime_type=file_mime,
+    )
+    async with _sf(request)() as session:
+        rids = (await session.execute(select(User.telegram_id))).all()
+    ids = [row[0] for row in rids]
+    ok, bad = await run_broadcast(
+        bot,
+        ids,
+        text=text,
+        reply_markup=kb,
+        attachment=attachment_data,
+    )
+    media = ""
+    if attachment_data.kind == "photo_bytes":
+        media = ", с фото"
+    elif attachment_data.kind == "document_id":
+        media = ", с файлом"
+    msg = f"Успешно: {ok}, ошибок: {bad}{media}"
+    return templates.TemplateResponse(
+        "broadcast_external.html",
+        {"request": request, "msg": msg, "err": None},
+    )
 
 
 @router.get("/review", response_class=HTMLResponse)
@@ -1052,6 +1186,7 @@ async def tasks_add(request: Request):
     name = (form.get("customer_name") or "").strip()
     link = (form.get("link") or "").strip()
     region = (form.get("region") or "").strip()
+    org_address = (form.get("org_address") or "").strip()
     try:
         rw = float(str(form.get("reward")).replace(",", "."))
     except Exception:
@@ -1065,6 +1200,7 @@ async def tasks_add(request: Request):
             pid,
             rw,
             "",
+            org_address=org_address or None,
             region=region or None,
         )
     if err:
@@ -1120,6 +1256,26 @@ async def task_detail(request: Request, tid: int):
             "err": qp.get("err"),
         },
     )
+
+
+@router.post("/tasks/{tid}/meta")
+async def task_meta_update(request: Request, tid: int):
+    r = _need_admin(request)
+    if r:
+        return r
+    form = await request.form()
+    region = (form.get("region") or "").strip()
+    org_address = (form.get("org_address") or "").strip()
+    async with _sf(request)() as session:
+        t = await update_task_fields(
+            session,
+            tid,
+            region=region,
+            org_address=org_address,
+        )
+    if not t:
+        return RedirectResponse("/tasks?err=" + quote("Заказчик не найден"), status_code=303)
+    return RedirectResponse(f"/tasks/{tid}?msg={quote('Сохранено')}", status_code=303)
 
 
 @router.post("/tasks/{tid}/reward")

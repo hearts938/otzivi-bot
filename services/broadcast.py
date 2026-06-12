@@ -20,6 +20,14 @@ IMAGE_MIMES = frozenset({
 IMAGE_EXTENSIONS = frozenset({".jpg", ".jpeg", ".png", ".gif", ".webp"})
 
 
+def parse_external_button_url(raw: str | None) -> str | None:
+    """Ссылка для inline-кнопки (сторонний ресурс)."""
+    s = (raw or "").strip()
+    if len(s) < 12 or not s.startswith(("http://", "https://")):
+        return None
+    return s[:2048]
+
+
 def sniff_is_image(data: bytes) -> bool:
     if len(data) < 12:
         return False

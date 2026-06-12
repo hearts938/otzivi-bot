@@ -5,6 +5,18 @@
 <p><b>Ссылка:</b> <a href="{{ task.link }}" target="_blank">{{ task.link }}</a></p>
 <p>Платформа: {{ task.platform.name if task.platform else '—' }}, регион: <b>{{ task.region or 'любой' }}</b></p>
 
+<h2>Адрес и регион (Яндекс Карты)</h2>
+<form method="post" action="/tasks/{{ task.id }}/meta">
+  <div><label>Адрес организации<br/>
+    <input name="org_address" value="{{ task.org_address or '' }}" style="width:100%;max-width:520px"
+           placeholder="Показывается исполнителю в карточке задания"/>
+  </label></div>
+  <div style="margin-top:0.5rem"><label>Регион
+    <input name="region" value="{{ task.region or '' }}" placeholder="Москва или пусто = любой"/>
+  </label></div>
+  <button type="submit" style="margin-top:0.5rem">Сохранить адрес и регион</button>
+</form>
+
 <h2>Оплата за отзыв</h2>
 <form method="post" action="/tasks/{{ task.id }}/reward">
   <label>Сумма (₽)

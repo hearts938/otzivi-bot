@@ -120,7 +120,16 @@ async def tadd_name(message: Message, state: FSMContext, settings: Settings):
         return
     await state.update_data(customer_name=(message.text or "").strip())
     await state.set_state(CustomerAddFSM.link)
-    await message.answer("Ссылка (http…):", reply_markup=admin_cancel_kb())
+    data = await state.get_data()
+    if data.get("is_yandex"):
+        await message.answer(
+            "Ссылка на организацию в <b>Яндекс Картах</b> "
+            "(скопируйте из браузера, https://yandex.ru/maps/…):",
+            reply_markup=admin_cancel_kb(),
+            parse_mode="HTML",
+        )
+        return
+    await message.answer("Ссылка на место/проект (https://…):", reply_markup=admin_cancel_kb())
 
 
 @router.message(CustomerAddFSM.link, F.text)

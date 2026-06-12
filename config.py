@@ -35,6 +35,8 @@ class Settings:
     payments_api_base_url: str
     payments_api_auth: str
     payments_api_timeout_seconds: int
+    reviews_stock_report_hour: int
+    reviews_stock_report_minute: int
 
 
 def get_settings() -> Settings:
@@ -71,4 +73,6 @@ def get_settings() -> Settings:
         payments_api_base_url=os.getenv("PAYMENTS_API_BASE_URL", "https://api-payments.konsol.pro").strip(),
         payments_api_auth=os.getenv("PAYMENTS_API_AUTH", "").strip(),
         payments_api_timeout_seconds=int(os.getenv("PAYMENTS_API_TIMEOUT_SECONDS", "20")),
+        reviews_stock_report_hour=int(os.getenv("REVIEWS_STOCK_REPORT_HOUR", "22")),
+        reviews_stock_report_minute=int(os.getenv("REVIEWS_STOCK_REPORT_MINUTE", "0")),
     )

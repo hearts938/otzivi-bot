@@ -5,7 +5,7 @@ import secrets
 import string
 from datetime import datetime, timedelta
 
-from sqlalchemy import delete, func, or_, select, update
+from sqlalchemy import delete, exists, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -409,18 +409,46 @@ async def list_tasks_available_for_user(
     """
     if not gender:
         return []
-    available: list[Task] = []
-    for t in await list_active_tasks(session):
-        sub = await get_submission_for_user_task(session, user_id, t.id)
-        if sub:
-            continue
-        claimed = await get_user_claimed_text(session, user_id, t.id)
-        if claimed:
-            available.append(t)
-            continue
-        if await list_available_texts(session, t.id, gender, for_user_id=user_id):
-            available.append(t)
-    return available
+    now = datetime.utcnow()
+    has_submission = exists(
+        select(1).where(
+            Submission.user_id == user_id,
+            Submission.task_id == Task.id,
+        )
+    )
+    has_claimed = exists(
+        select(1).where(
+            TaskText.task_id == Task.id,
+            TaskText.taken_by_user_id == user_id,
+        )
+    )
+    text_not_refused = ~exists(
+        select(1).where(
+            UserTextRefusal.user_id == user_id,
+            UserTextRefusal.task_text_id == TaskText.id,
+        )
+    )
+    has_free_text = exists(
+        select(1).where(
+            TaskText.task_id == Task.id,
+            TaskText.required_gender == gender,
+            TaskText.taken_by_user_id.is_(None),
+            TaskText.published.is_(True),
+            or_(TaskText.publish_at.is_(None), TaskText.publish_at <= now),
+            text_not_refused,
+        )
+    )
+    r = await session.execute(
+        select(Task)
+        .options(selectinload(Task.platform))
+        .where(
+            Task.active.is_(True),
+            ~has_submission,
+            or_(has_claimed, has_free_text),
+        )
+        .order_by(Task.id.desc())
+    )
+    return list(r.scalars().unique().all())
 
 
 async def list_tasks_available_for_user_on_platform(
@@ -448,13 +476,7 @@ async def list_platforms_available_for_user(
         if not p or not p.active:
             continue
         out.append((p, cnt))
-    if any(p.slug != "default" for p, _ in out):
-        out = [(p, c) for p, c in out if p.slug != "default"]
     return sorted(out, key=lambda x: x[0].name.lower())
-    r = await session.execute(
-        select(Task).options(selectinload(Task.platform)).order_by(Task.id.desc())
-    )
-    return list(r.scalars().unique().all())
 
 
 async def get_task(session: AsyncSession, task_id: int) -> Task | None:
@@ -803,6 +825,7 @@ async def update_task_fields(
     active: bool | None = None,
     platform_id: int | None = None,
     region: str | None = None,
+    org_address: str | None = None,
 ) -> Task | None:
     t = await session.get(Task, task_id)
     if not t:
@@ -821,6 +844,8 @@ async def update_task_fields(
         t.platform_id = platform_id
     if region is not None:
         t.region = region.strip()[:255] or None
+    if org_address is not None:
+        t.org_address = org_address.strip()[:1024] or None
     await session.commit()
     await session.refresh(t)
     return t
@@ -900,6 +925,7 @@ async def get_or_create_customer_by_link(
     platform_id: int,
     customer_name: str | None = None,
     reward: float = 0.0,
+    org_address: str | None = None,
 ) -> tuple[Task, bool]:
     rw = max(0.0, float(reward))
     existing = await get_task_by_link(session, link)
@@ -909,6 +935,8 @@ async def get_or_create_customer_by_link(
             existing.title = existing.customer_name
         if rw > 0:
             existing.reward = rw
+        if org_address and not (existing.org_address or "").strip():
+            existing.org_address = org_address.strip()[:1024]
         await session.commit()
         return existing, False
     name = (customer_name or "Заказчик").strip()[:512]
@@ -919,6 +947,7 @@ async def get_or_create_customer_by_link(
         description="",
         reward=rw,
         link=link[:1024],
+        org_address=(org_address or "").strip()[:1024] or None,
         active=True,
     )
     session.add(t)
@@ -938,6 +967,7 @@ async def import_review_texts(
     texts_n = 0
     tasks_n = 0
     errors: list[str] = []
+    batch = 0
     for item in items:
         if not isinstance(item, ImportedReviewText):
             continue
@@ -947,7 +977,11 @@ async def import_review_texts(
             platform_id,
             item.customer_name,
             getattr(item, "reward", 0.0),
+            getattr(item, "org_address", None),
         )
+        addr = getattr(item, "org_address", None)
+        if addr and task and not (task.org_address or "").strip():
+            task.org_address = addr.strip()[:1024]
         if created:
             tasks_n += 1
         elif item.customer_name and task.customer_name != item.customer_name:
@@ -979,6 +1013,10 @@ async def import_review_texts(
             )
         )
         texts_n += 1
+        batch += 1
+        if batch >= 25:
+            await session.commit()
+            batch = 0
     await session.commit()
     return texts_n, tasks_n, errors
 
