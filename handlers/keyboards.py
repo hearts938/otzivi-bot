@@ -60,6 +60,10 @@ A_IMPORT_EXCEL = "📥 Импорт из Excel"
 A_REVIEW = "📋 Задания на проверке"
 A_SUPPORT = "📩 Поддержка"
 A_WITHDRAWALS = "💸 Заявки на вывод"
+A_PAYOUT_STATS = "📊 Статистика выплат"
+A_PAYOUTS = "📒 Реестр выплат"
+BTN_PAYOUT_RECENT = "📋 Последние выплаты"
+BTN_PAYOUT_SEARCH = "🔍 По @username"
 A_YM_QUIZ = "📝 Тест Яндекс Карт"
 BTN_YM_QUIZ_EDIT = "✏️ Изменить вопрос"
 BTN_YM_QUIZ_LIST = "📋 Пул вопросов"
@@ -86,6 +90,8 @@ ADMIN_MAIN_BUTTONS = frozenset({
     A_REVIEW,
     A_SUPPORT,
     A_WITHDRAWALS,
+    A_PAYOUT_STATS,
+    A_PAYOUTS,
     A_YM_QUIZ,
     BTN_YM_QUIZ_EDIT,
     BTN_YM_QUIZ_LIST,
@@ -122,6 +128,7 @@ BTN_BANK_SEARCH_AGAIN = "🔍 Искать снова"
 USERS_PAGE_SIZE = 7
 TEXTS_PAGE_SIZE = 8
 WITHDRAW_BANKS_PAGE_SIZE = 8
+PAYOUTS_PAGE_SIZE = 10
 
 
 def _kb(rows: list[list[str]], *, persistent: bool = True) -> ReplyKeyboardMarkup:
@@ -255,6 +262,8 @@ def admin_root_kb() -> ReplyKeyboardMarkup:
             A_REVIEW,
             A_SUPPORT,
             A_WITHDRAWALS,
+            A_PAYOUT_STATS,
+            A_PAYOUTS,
             A_YM_QUIZ,
             A_IMPORT_EXCEL,
             BTN_USER_MENU,
@@ -523,6 +532,32 @@ def parse_support_action(text: str | None) -> tuple[str, int] | None:
         except ValueError:
             return None
     return None
+
+
+def payout_pick_label(withdrawal_id: int, username: str | None, amount: float) -> str:
+    un = f"@{username}" if username else "без @"
+    return f"💳 ·#wd{withdrawal_id} · {un} · {amount:.0f}₽"
+
+
+def parse_payout_pick(text: str | None) -> int | None:
+    text = _btn_text(text)
+    if not text or "·#wd" not in text:
+        return None
+    try:
+        return int(text.rsplit("·#wd", 1)[1].split("·", 1)[0].strip())
+    except ValueError:
+        return None
+
+
+def admin_payouts_menu_kb() -> ReplyKeyboardMarkup:
+    return _kb(_rows(BTN_PAYOUT_RECENT, BTN_PAYOUT_SEARCH, BTN_ADMIN_HOME))
+
+
+def admin_payouts_list_kb(labels: list[str]) -> ReplyKeyboardMarkup:
+    rows = [[lbl] for lbl in labels[:PAYOUTS_PAGE_SIZE]]
+    rows.append([BTN_PAYOUT_SEARCH, BTN_PAYOUT_RECENT])
+    rows.append([BTN_ADMIN_HOME])
+    return _kb(rows)
 
 
 def parse_withdraw_action(text: str | None) -> tuple[str, int] | None:

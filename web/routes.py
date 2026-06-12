@@ -44,6 +44,9 @@ from repo import (
     list_platforms_all,
     list_users_admin,
     list_users_with_stats,
+    list_withdrawals,
+    get_withdrawal,
+    count_withdrawals,
     resolve_user_ref,
     update_task_fields,
     set_setting,
@@ -61,6 +64,8 @@ from services.reviews_stock import (
     fetch_platform_review_stock,
     send_reviews_stock_to_admins,
 )
+from services.payout_registry import payout_row_dict
+from services.withdrawal_stats import fetch_withdrawal_stats
 from services.support_admin import deliver_support_reply, reject_support_ticket
 from services.publish_scheduler import activate_due_texts
 from services.gender import gender_label
@@ -427,6 +432,80 @@ async def broadcast_post(
         media = ", с файлом"
     msg = f"Успешно: {ok}, ошибок: {bad}{media}"
     return templates.TemplateResponse("broadcast.html", {"request": request, "msg": msg, "err": None})
+
+
+@router.get("/payouts", response_class=HTMLResponse)
+async def payouts_list(request: Request):
+    r = _need_admin(request)
+    if r:
+        return r
+    settings = _settings(request)
+    user_ref = (request.query_params.get("user") or "").strip()
+    user_id: int | None = None
+    rows: list[dict] = []
+    total = 0
+    async with _sf(request)() as session:
+        if user_ref:
+            u = await resolve_user_ref(session, user_ref)
+            if u:
+                user_id = u.id
+                wrows = await list_withdrawals(session, limit=200, user_id=u.id)
+                total = await count_withdrawals(session, user_id=u.id)
+            else:
+                wrows = []
+        else:
+            wrows = await list_withdrawals(session, limit=100)
+            total = await count_withdrawals(session)
+        rows = [payout_row_dict(w, settings.app_timezone) for w in wrows]
+    return templates.TemplateResponse(
+        "payouts.html",
+        {
+            "request": request,
+            "rows": rows,
+            "total": total,
+            "user_ref": user_ref or None,
+            "timezone": settings.app_timezone,
+        },
+    )
+
+
+@router.get("/payouts/{wid}", response_class=HTMLResponse)
+async def payout_detail(request: Request, wid: int):
+    r = _need_admin(request)
+    if r:
+        return r
+    settings = _settings(request)
+    async with _sf(request)() as session:
+        req = await get_withdrawal(session, wid)
+    if not req:
+        return HTMLResponse("Выплата не найдена", status_code=404)
+    row = payout_row_dict(req, settings.app_timezone)
+    return templates.TemplateResponse(
+        "payout_detail.html",
+        {
+            "request": request,
+            "row": row,
+            "timezone": settings.app_timezone,
+        },
+    )
+
+
+@router.get("/payout-stats", response_class=HTMLResponse)
+async def payout_stats_get(request: Request):
+    r = _need_admin(request)
+    if r:
+        return r
+    settings = _settings(request)
+    async with _sf(request)() as session:
+        periods = await fetch_withdrawal_stats(session, settings.app_timezone)
+    return templates.TemplateResponse(
+        "payout_stats.html",
+        {
+            "request": request,
+            "periods": periods,
+            "timezone": settings.app_timezone,
+        },
+    )
 
 
 @router.get("/reviews-stock", response_class=HTMLResponse)

@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% block title %}Статистика выплат{% endblock %}
+{% block body %}
+<h1>Статистика выплат</h1>
+<p>
+  Заявки на вывод через СБП (таблица <code>withdrawal_requests</code>).
+  Периоды по часовому поясу <strong>{{ timezone }}</strong>.
+  «За месяц» — с 1-го числа текущего месяца, «За 7 дней» — скользящее окно.
+</p>
+
+<table>
+  <tr>
+    <th>Период</th>
+    <th>Успешно (шт.)</th>
+    <th>Успешно (₽)</th>
+    <th>Ошибки (шт.)</th>
+    <th>Ошибки (₽)</th>
+    <th>Всего (шт.)</th>
+    <th>Всего (₽)</th>
+  </tr>
+  {% for p in periods %}
+  <tr>
+    <td><strong>{{ p.label }}</strong></td>
+    <td>{{ p.success_count }}</td>
+    <td>{{ "%.2f"|format(p.success_amount) }}</td>
+    <td>{{ p.failed_count }}</td>
+    <td>{{ "%.2f"|format(p.failed_amount) }}</td>
+    <td>{{ p.total_count }}</td>
+    <td>{{ "%.2f"|format(p.total_amount) }}</td>
+  </tr>
+  {% endfor %}
+</table>
+
+<p><a href="/">На главную</a></p>
+{% endblock %}

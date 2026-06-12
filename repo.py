@@ -351,6 +351,46 @@ async def list_user_withdrawals(
     return list(r.scalars().all())
 
 
+async def count_withdrawals(
+    session: AsyncSession, *, user_id: int | None = None
+) -> int:
+    stmt = select(func.count()).select_from(WithdrawalRequest)
+    if user_id is not None:
+        stmt = stmt.where(WithdrawalRequest.user_id == user_id)
+    return int((await session.execute(stmt)).scalar_one() or 0)
+
+
+async def list_withdrawals(
+    session: AsyncSession,
+    *,
+    limit: int = 20,
+    offset: int = 0,
+    user_id: int | None = None,
+) -> list[WithdrawalRequest]:
+    stmt = (
+        select(WithdrawalRequest)
+        .order_by(WithdrawalRequest.id.desc())
+        .offset(max(0, offset))
+        .limit(max(1, limit))
+    )
+    if user_id is not None:
+        stmt = stmt.where(WithdrawalRequest.user_id == user_id)
+    rows = list((await session.execute(stmt)).scalars().all())
+    for row in rows:
+        row.user = await session.get(User, row.user_id)
+    return rows
+
+
+async def get_withdrawal(
+    session: AsyncSession, withdrawal_id: int
+) -> WithdrawalRequest | None:
+    row = await session.get(WithdrawalRequest, withdrawal_id)
+    if not row:
+        return None
+    row.user = await session.get(User, row.user_id)
+    return row
+
+
 async def get_setting(session: AsyncSession, key: str, default: str = "") -> str:
     row = await session.get(AppSetting, key)
     return row.value if row else default

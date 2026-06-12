@@ -3,13 +3,14 @@ from __future__ import annotations
 from aiogram import F, Router
 from aiogram.exceptions import TelegramBadRequest, TelegramForbiddenError
 from aiogram.types import Message
-from sqlalchemy.ext.asyncio import async_sessionmaker
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from config import Settings
 from database.models import WithdrawalAdminStatus
 from handlers.admin.common import is_admin
 from handlers.formatting import blockquote
 from handlers.keyboards import (
+    A_PAYOUT_STATS,
     A_WITHDRAWALS,
     admin_back_home_kb,
     admin_withdraw_item_kb,
@@ -17,6 +18,7 @@ from handlers.keyboards import (
 )
 from repo import list_pending_withdrawals, set_withdrawal_admin_decision
 from services.fps_banks import fps_bank_title
+from services.withdrawal_stats import fetch_withdrawal_stats, format_withdrawal_stats_message
 
 router = Router(name="admin_withdrawals")
 
@@ -39,6 +41,23 @@ def _withdraw_card_text(req) -> str:
     return (
         f"💸 <b>Заявка на вывод ·#wd{req.id}</b>\n\n"
         f"{blockquote(info)}"
+    )
+
+
+@router.message(F.text == A_PAYOUT_STATS)
+async def msg_payout_stats(
+    message: Message,
+    session_factory: async_sessionmaker[AsyncSession],
+    settings: Settings,
+):
+    if not is_admin(message.from_user.id, settings):
+        return
+    async with session_factory() as session:
+        periods = await fetch_withdrawal_stats(session, settings.app_timezone)
+    await message.answer(
+        format_withdrawal_stats_message(periods, settings.app_timezone),
+        parse_mode="HTML",
+        reply_markup=admin_back_home_kb(),
     )
 
 

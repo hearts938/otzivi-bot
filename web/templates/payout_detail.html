@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% block title %}Выплата wd{{ row.id }}{% endblock %}
+{% block body %}
+<h1>Выплата ·#wd{{ row.id }}</h1>
+<table>
+  <tr><th>Пользователь</th><td>{{ row.username }} (Telegram ID {{ row.telegram_id }})</td></tr>
+  <tr><th>Сумма</th><td><strong>{{ "%.2f"|format(row.amount) }} ₽</strong></td></tr>
+  <tr><th>Телефон СБП</th><td>{{ row.phone }}</td></tr>
+  <tr><th>Банк</th><td>{{ row.bank }} <code>{{ row.bank_id }}</code></td></tr>
+  <tr><th>Дата заявки</th><td>{{ row.created_at }} ({{ timezone }})</td></tr>
+  <tr><th>Статус API</th><td>{{ row.status_label }}</td></tr>
+  <tr><th>ID платежа API</th><td>{{ row.payment_id }}</td></tr>
+  <tr><th>Модерация</th><td>{{ row.admin_status_label }}</td></tr>
+  <tr><th>Решение админа</th><td>{{ row.admin_decided_at }}</td></tr>
+  <tr><th>Ошибка</th><td>{{ row.error }}</td></tr>
+</table>
+<p><a href="/payouts?user={{ row.username|replace('@','') if row.username != '—' else '' }}">Все выплаты пользователя</a> · <a href="/payouts">Реестр</a></p>
+{% endblock %}

@@ -6,6 +6,7 @@ from handlers.admin import (
     finance,
     moderation,
     ops,
+    payouts,
     panel,
     review,
     reviews_stock,
@@ -19,6 +20,7 @@ from handlers.admin import (
 router = Router(name="admin_root")
 router.include_router(support.router)
 router.include_router(withdrawals.router)
+router.include_router(payouts.router)
 router.include_router(panel.router)
 router.include_router(moderation.router)
 router.include_router(review.router)

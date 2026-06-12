@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+{% block title %}Реестр выплат{% endblock %}
+{% block body %}
+<h1>Реестр выплат</h1>
+<p>Каждая выплата имеет номер <code>wd123</code> (поле <code>·#wd123</code> в боте). Время: {{ timezone }}.</p>
+
+<form method="get" action="/payouts" style="margin:1rem 0">
+  <label>
+    Поиск по @username или Telegram ID:
+    <input name="user" value="{{ user_ref or '' }}" placeholder="@username"/>
+  </label>
+  <button type="submit">Найти</button>
+  {% if user_ref %}
+  <a href="/payouts">Сбросить</a>
+  {% endif %}
+</form>
+
+{% if user_ref and not rows %}
+<p class="alert alert-warn">Пользователь не найден или у него нет выплат.</p>
+{% endif %}
+
+{% if rows %}
+<p>Всего: <strong>{{ total }}</strong></p>
+<table>
+  <tr>
+    <th>№</th>
+    <th>Пользователь</th>
+    <th>Сумма</th>
+    <th>Телефон</th>
+    <th>Банк</th>
+    <th>Дата</th>
+    <th>Статус</th>
+    <th></th>
+  </tr>
+  {% for r in rows %}
+  <tr>
+    <td><a href="/payouts/{{ r.id }}">wd{{ r.id }}</a></td>
+    <td>{{ r.username }}</td>
+    <td>{{ "%.2f"|format(r.amount) }} ₽</td>
+    <td>{{ r.phone }}</td>
+    <td>{{ r.bank }}</td>
+    <td>{{ r.created_at }}</td>
+    <td>{{ r.status_label }}</td>
+    <td><a href="/payouts/{{ r.id }}">Открыть</a></td>
+  </tr>
+  {% endfor %}
+</table>
+{% elif not user_ref %}
+<p>Выплат пока нет.</p>
+{% endif %}
+
+<p><a href="/payout-stats">Статистика выплат</a> · <a href="/">На главную</a></p>
+{% endblock %}

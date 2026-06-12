@@ -73,6 +73,10 @@ class AdminUsersBrowse(StatesGroup):
     list_pick = State()
 
 
+class AdminPayoutsBrowse(StatesGroup):
+    search_user = State()
+
+
 class YandexQuizFSM(StatesGroup):
     edit_slot = State()
     edit_body = State()
