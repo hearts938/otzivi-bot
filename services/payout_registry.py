@@ -16,6 +16,13 @@ _API_STATUS_RU = {
     WithdrawalStatus.FAILED: "Ошибка",
 }
 
+_USER_STATUS_RU = {
+    WithdrawalStatus.CREATED: "В обработке",
+    WithdrawalStatus.EXECUTED: "Выплачено",
+    WithdrawalStatus.MANUALPAY: "Выплачено",
+    WithdrawalStatus.FAILED: "Не состоялась",
+}
+
 _ADMIN_STATUS_RU = {
     WithdrawalAdminStatus.PENDING: "Ожидает решения",
     WithdrawalAdminStatus.APPROVED: "Подтверждена админом",
@@ -68,6 +75,31 @@ def payout_row_dict(req: WithdrawalRequest, tz_name: str) -> dict:
         "created_at": format_payout_datetime(req.created_at, tz_name),
         "admin_decided_at": format_payout_datetime(req.admin_decided_at, tz_name),
     }
+
+
+def format_user_payout_list_html(
+    withdrawals: list[WithdrawalRequest],
+    tz_name: str,
+) -> str:
+    if not withdrawals:
+        return (
+            "📋 <b>Список выплат</b>\n\n"
+            "<blockquote>Пока нет выплат.</blockquote>"
+        )
+    lines: list[str] = []
+    for w in withdrawals:
+        dt = format_payout_datetime(w.created_at, tz_name)
+        st = _USER_STATUS_RU.get(w.status, w.status)
+        lines.append(
+            f"<b>·#wd{w.id}</b> · {float(w.amount or 0):.2f} ₽ · {st}\n"
+            f"<i>{dt}</i>"
+        )
+    body = "\n\n".join(lines)
+    return (
+        f"📋 <b>Список выплат</b>\n\n"
+        f"<blockquote>{body}</blockquote>\n\n"
+        f"<i>Время по {tz_name}. Номер выплаты: ·#wdN</i>"
+    )
 
 
 def format_payout_card_html(req: WithdrawalRequest, tz_name: str) -> str:

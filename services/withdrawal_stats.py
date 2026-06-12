@@ -55,8 +55,6 @@ async def aggregate_withdrawals(
     success_cond = WithdrawalRequest.status.in_(tuple(SUCCESS_STATUSES))
     failed_cond = WithdrawalRequest.status == WithdrawalStatus.FAILED
     stmt = select(
-        func.count(WithdrawalRequest.id),
-        func.coalesce(func.sum(WithdrawalRequest.amount), 0.0),
         func.coalesce(func.sum(case((success_cond, 1), else_=0)), 0),
         func.coalesce(func.sum(case((success_cond, WithdrawalRequest.amount), else_=0.0)), 0.0),
         func.coalesce(func.sum(case((failed_cond, 1), else_=0)), 0),
@@ -65,13 +63,17 @@ async def aggregate_withdrawals(
     if since is not None:
         stmt = stmt.where(WithdrawalRequest.created_at >= since)
     row = (await session.execute(stmt)).one()
+    success_count = int(row[0] or 0)
+    success_amount = float(row[1] or 0)
+    failed_count = int(row[2] or 0)
+    failed_amount = float(row[3] or 0)
     return (
-        int(row[0] or 0),
-        float(row[1] or 0),
-        int(row[2] or 0),
-        float(row[3] or 0),
-        int(row[4] or 0),
-        float(row[5] or 0),
+        success_count,
+        success_amount,
+        success_count,
+        success_amount,
+        failed_count,
+        failed_amount,
     )
 
 
@@ -111,9 +113,8 @@ def format_withdrawal_stats_message(periods: list[WithdrawalPeriodStats], tz_nam
     for p in periods:
         blocks.append(
             f"<b>{p.label}</b>\n"
-            f"✅ Успешно: <b>{p.success_count}</b> шт. · <b>{p.success_amount:.2f}</b> ₽\n"
-            f"❌ Ошибки: <b>{p.failed_count}</b> шт. · <b>{p.failed_amount:.2f}</b> ₽\n"
-            f"Всего попыток: <b>{p.total_count}</b> шт. · <b>{p.total_amount:.2f}</b> ₽"
+            f"✅ Выплачено: <b>{p.success_count}</b> шт. · <b>{p.success_amount:.2f}</b> ₽\n"
+            f"❌ Не состоялось: <b>{p.failed_count}</b> шт. · <b>{p.failed_amount:.2f}</b> ₽"
         )
     body = "\n\n".join(blocks)
     return (

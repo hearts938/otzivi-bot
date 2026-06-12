@@ -86,7 +86,7 @@ async def msg_payouts_menu(message: Message, state: FSMContext, settings: Settin
     await state.clear()
     await message.answer(
         f"📒 <b>Реестр выплат</b>\n\n"
-        f"{blockquote('Каждая выплата имеет номер ·#wdN. Можно искать по @username или открыть по номеру.')}",
+        f"{blockquote('Каждая выплата имеет номер ·#wdN. Поиск: @username, Telegram ID или номер (#wd5, wd5).')}",
         parse_mode="HTML",
         reply_markup=admin_payouts_menu_kb(),
     )
@@ -118,7 +118,7 @@ async def msg_payouts_search_start(
     await state.set_state(AdminPayoutsBrowse.search_user)
     await message.answer(
         f"🔍 <b>Поиск выплат</b>\n\n"
-        f"{blockquote('Введите @username или числовой Telegram ID.')}",
+        f"{blockquote('Введите @username, Telegram ID или номер выплаты (#wd5, wd5).')}",
         parse_mode="HTML",
         reply_markup=admin_back_home_kb(),
     )
@@ -138,11 +138,16 @@ async def msg_payouts_search_user(
         await state.clear()
         return
     ref = (message.text or "").strip()
+    pid = parse_payout_ref(ref)
+    if pid is not None:
+        await state.clear()
+        await _send_payout_card(message, session_factory, settings, pid)
+        return
     async with session_factory() as session:
         u = await resolve_user_ref(session, ref)
     if not u:
         await message.answer(
-            "Пользователь не найден. Введите @username или Telegram ID.",
+            "Не найдено. Введите @username, Telegram ID или номер выплаты (#wd5, wd5).",
             reply_markup=admin_back_home_kb(),
         )
         return

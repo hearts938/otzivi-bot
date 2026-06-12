@@ -6,17 +6,16 @@
   Заявки на вывод через СБП (таблица <code>withdrawal_requests</code>).
   Периоды по часовому поясу <strong>{{ timezone }}</strong>.
   «За месяц» — с 1-го числа текущего месяца, «За 7 дней» — скользящее окно.
+  В итог входят только <strong>успешные</strong> выплаты; несостоявшиеся показаны отдельно.
 </p>
 
 <table>
   <tr>
     <th>Период</th>
-    <th>Успешно (шт.)</th>
-    <th>Успешно (₽)</th>
-    <th>Ошибки (шт.)</th>
-    <th>Ошибки (₽)</th>
-    <th>Всего (шт.)</th>
-    <th>Всего (₽)</th>
+    <th>Выплачено (шт.)</th>
+    <th>Выплачено (₽)</th>
+    <th>Не состоялось (шт.)</th>
+    <th>Не состоялось (₽)</th>
   </tr>
   {% for p in periods %}
   <tr>
@@ -25,8 +24,6 @@
     <td>{{ "%.2f"|format(p.success_amount) }}</td>
     <td>{{ p.failed_count }}</td>
     <td>{{ "%.2f"|format(p.failed_amount) }}</td>
-    <td>{{ p.total_count }}</td>
-    <td>{{ "%.2f"|format(p.total_amount) }}</td>
   </tr>
   {% endfor %}
 </table>

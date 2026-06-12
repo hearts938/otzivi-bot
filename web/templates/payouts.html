@@ -6,8 +6,8 @@
 
 <form method="get" action="/payouts" style="margin:1rem 0">
   <label>
-    Поиск по @username или Telegram ID:
-    <input name="user" value="{{ user_ref or '' }}" placeholder="@username"/>
+    Поиск по @username, Telegram ID или номеру выплаты:
+    <input name="user" value="{{ user_ref or '' }}" placeholder="@username или #wd5"/>
   </label>
   <button type="submit">Найти</button>
   {% if user_ref %}
@@ -16,7 +16,7 @@
 </form>
 
 {% if user_ref and not rows %}
-<p class="alert alert-warn">Пользователь не найден или у него нет выплат.</p>
+<p class="alert alert-warn">Ничего не найдено: проверьте @username, Telegram ID или номер wdN.</p>
 {% endif %}
 
 {% if rows %}

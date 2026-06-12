@@ -64,7 +64,7 @@ from services.reviews_stock import (
     fetch_platform_review_stock,
     send_reviews_stock_to_admins,
 )
-from services.payout_registry import payout_row_dict
+from services.payout_registry import parse_payout_ref, payout_row_dict
 from services.withdrawal_stats import fetch_withdrawal_stats
 from services.support_admin import deliver_support_reply, reject_support_ticket
 from services.publish_scheduler import activate_due_texts
@@ -444,6 +444,10 @@ async def payouts_list(request: Request):
     user_id: int | None = None
     rows: list[dict] = []
     total = 0
+    if user_ref:
+        pid = parse_payout_ref(user_ref)
+        if pid is not None:
+            return RedirectResponse(url=f"/payouts/{pid}", status_code=303)
     async with _sf(request)() as session:
         if user_ref:
             u = await resolve_user_ref(session, user_ref)

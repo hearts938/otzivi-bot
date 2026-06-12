@@ -30,6 +30,8 @@ from handlers.keyboards import (
     BTN_PROFILE,
     BTN_REFERRAL,
     BTN_WITHDRAW,
+    BTN_USER_PAYOUTS,
+    USER_PAYOUTS_PAGE_SIZE,
     BTN_TASK_DONE,
     BTN_TASK_REFUSE,
     BTN_TASKS,
@@ -79,6 +81,7 @@ from repo import user_is_banned_now
 from services.yandex_maps import is_yandex_maps_slug
 from services.fps_banks import FpsBank, get_fps_banks, search_fps_banks
 from services.payments_api import create_fps_payment
+from services.payout_registry import format_user_payout_list_html
 
 router = Router(name="user")
 router.message.filter(OnboardingCompletedFilter())
@@ -694,6 +697,31 @@ async def msg_profile(
 ):
     await state.clear()
     await _send_profile(message, session_factory, settings)
+
+
+@router.message(F.text == BTN_USER_PAYOUTS)
+async def msg_user_payouts(
+    message: Message,
+    session_factory: async_sessionmaker[AsyncSession],
+    settings: Settings,
+    state: FSMContext,
+):
+    await state.clear()
+    async with session_factory() as session:
+        u = await ensure_user(
+            session,
+            message.from_user.id,
+            message.from_user.username,
+            referred_by_id=None,
+            first_name=message.from_user.first_name,
+            last_name=message.from_user.last_name,
+        )
+        rows = await list_user_withdrawals(session, u.id, limit=USER_PAYOUTS_PAGE_SIZE)
+    await message.answer(
+        format_user_payout_list_html(rows, settings.app_timezone),
+        parse_mode="HTML",
+        reply_markup=user_profile_kb(),
+    )
 
 
 @router.message(F.text == BTN_WITHDRAW)

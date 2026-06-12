@@ -8,6 +8,7 @@ from aiogram.types import KeyboardButton, ReplyKeyboardMarkup
 BTN_TASKS = "📋 Задания"
 BTN_PROFILE = "👤 Профиль и баланс"
 BTN_WITHDRAW = "💸 Вывести средства"
+BTN_USER_PAYOUTS = "📋 Список выплат"
 BTN_REFERRAL = "🔗 Реферальная ссылка"
 BTN_SUPPORT = "💬 Поддержка"
 BTN_SUPPORT_NO_SCREEN = "Нет"
@@ -63,7 +64,7 @@ A_WITHDRAWALS = "💸 Заявки на вывод"
 A_PAYOUT_STATS = "📊 Статистика выплат"
 A_PAYOUTS = "📒 Реестр выплат"
 BTN_PAYOUT_RECENT = "📋 Последние выплаты"
-BTN_PAYOUT_SEARCH = "🔍 По @username"
+BTN_PAYOUT_SEARCH = "🔍 Поиск"
 A_YM_QUIZ = "📝 Тест Яндекс Карт"
 BTN_YM_QUIZ_EDIT = "✏️ Изменить вопрос"
 BTN_YM_QUIZ_LIST = "📋 Пул вопросов"
@@ -129,6 +130,7 @@ USERS_PAGE_SIZE = 7
 TEXTS_PAGE_SIZE = 8
 WITHDRAW_BANKS_PAGE_SIZE = 8
 PAYOUTS_PAGE_SIZE = 10
+USER_PAYOUTS_PAGE_SIZE = 20
 
 
 def _kb(rows: list[list[str]], *, persistent: bool = True) -> ReplyKeyboardMarkup:
@@ -161,7 +163,7 @@ def user_back_menu_kb() -> ReplyKeyboardMarkup:
 
 
 def user_profile_kb() -> ReplyKeyboardMarkup:
-    return _kb(_rows(BTN_WITHDRAW, BTN_BACK_MENU))
+    return _kb(_rows(BTN_WITHDRAW, BTN_USER_PAYOUTS, BTN_BACK_MENU))
 
 
 def withdraw_bank_label(member_id: str, title: str) -> str:
