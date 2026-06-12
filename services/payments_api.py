@@ -28,6 +28,19 @@ def _make_url(base_url: str, path: str) -> str:
     return f"{base_url.rstrip('/')}/{path.lstrip('/')}"
 
 
+def format_api_errors(data: Any) -> str | None:
+    if not isinstance(data, dict):
+        return None
+    errors = data.get("errors")
+    if isinstance(errors, list) and errors:
+        return "; ".join(str(x) for x in errors if x)[:500]
+    for key in ("error", "message", "error_message", "detail"):
+        val = data.get(key)
+        if val:
+            return str(val)[:500]
+    return None
+
+
 def _parse_api_error_body(body: str) -> str | None:
     text = (body or "").strip()
     if not text:
@@ -36,12 +49,7 @@ def _parse_api_error_body(body: str) -> str | None:
         data = json.loads(text)
     except json.JSONDecodeError:
         return text[:500]
-    if isinstance(data, dict):
-        for key in ("error", "message", "error_message", "detail"):
-            val = data.get(key)
-            if val:
-                return str(val)[:500]
-    return text[:500]
+    return format_api_errors(data) if isinstance(data, dict) else text[:500]
 
 
 def _http_json(
@@ -106,10 +114,18 @@ def create_fps_payment(
             payload=payload,
             timeout=max(5, int(settings.payments_api_timeout_seconds)),
         )
+        if raw.get("success") is False:
+            return PaymentCreateResult(
+                ok=False,
+                status="failed",
+                payment_id=None,
+                error_message=format_api_errors(raw) or "Ошибка API выплат",
+                raw=raw,
+            )
         status = str(raw.get("status") or "").strip().lower() or "created"
         pid = str(raw.get("id") or "").strip() or None
         ok = status in {"created", "manualpay", "executed"}
-        msg = raw.get("error_message")
+        msg = format_api_errors(raw) or raw.get("error_message")
         return PaymentCreateResult(
             ok=ok,
             status=status,

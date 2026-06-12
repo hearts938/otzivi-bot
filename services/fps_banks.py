@@ -1,7 +1,9 @@
-"""Справочник банков СБП для вывода (Консоль.Про API)."""
+"""Справочник банков СБП для вывода (Консоль.Про API + НСПК)."""
 
 from __future__ import annotations
 
+import json
+import re
 import time
 from dataclasses import dataclass
 from typing import Any
@@ -10,6 +12,8 @@ from urllib import error, request
 from config import Settings
 from services.payments_api import _headers, _make_url, _parse_api_error_body
 
+NSPK_BANKS_URL = "https://qr.nspk.ru/proxyapp/c2bmembers.json"
+_NSPK_MEMBER_RE = re.compile(r"^(\d{10,15})$")
 
 @dataclass(frozen=True)
 class FpsBank:
@@ -17,48 +21,81 @@ class FpsBank:
     title: str
 
 
-# Запасной список, если API временно недоступен (id как в Консоль.Про).
-FALLBACK_FPS_BANKS: tuple[FpsBank, ...] = (
-    FpsBank("sberbank", "Сбербанк"),
-    FpsBank("t_bank", "Т-Банк"),
-    FpsBank("vtb", "ВТБ"),
-    FpsBank("alfa_bank", "Альфа-Банк"),
-    FpsBank("raiffeisen", "Райффайзенбанк"),
-    FpsBank("gazprombank", "Газпромбанк"),
-    FpsBank("rosbank", "Росбанк"),
-    FpsBank("sovcombank", "Совкомбанк"),
-    FpsBank("pochta_bank", "Почта Банк"),
-    FpsBank("mts_bank", "МТС Банк"),
-    FpsBank("ozon_bank", "OZON Банк"),
-    FpsBank("yandex_bank", "Яндекс Банк"),
-    FpsBank("psb", "ПСБ"),
-    FpsBank("rshb", "Россельхозбанк"),
-    FpsBank("uralsib", "Уралсиб"),
-    FpsBank("open", "Открытие"),
+# Последний запасной вариант — только коды НСПК (не slug вроде t_bank).
+MINIMAL_FPS_BANKS: tuple[FpsBank, ...] = (
+    FpsBank("100000000111", "Сбербанк"),
+    FpsBank("100000000004", "Т-Банк"),
+    FpsBank("100000000005", "ВТБ"),
+    FpsBank("100000000008", "Альфа-Банк"),
+    FpsBank("100000000007", "Райффайзенбанк"),
+    FpsBank("100000000001", "Газпромбанк"),
+    FpsBank("100000000012", "Росбанк"),
+    FpsBank("100000000013", "Совкомбанк"),
+    FpsBank("100000000010", "ПСБ"),
+    FpsBank("100000000020", "Россельхозбанк"),
+    FpsBank("100000000015", "Открытие"),
 )
 
 _CACHE_TTL_SECONDS = 3600
 _cache: tuple[float, list[FpsBank], str | None] | None = None
+_nspk_cache: tuple[float, list[FpsBank]] | None = None
+
+
+def member_id_from_schema(schema: str | None) -> str | None:
+    s = (schema or "").strip()
+    if not s:
+        return None
+    if s.startswith("bank"):
+        s = s[4:]
+    if _NSPK_MEMBER_RE.match(s):
+        return s
+    return None
+
+
+def _is_nspk_member_id(value: str | None) -> bool:
+    return bool(value and _NSPK_MEMBER_RE.match(value.strip()))
+
+
+def _pick_member_id(item: dict[str, Any]) -> str | None:
+    candidates: list[str] = []
+    schema_id = member_id_from_schema(str(item.get("schema") or ""))
+    if schema_id:
+        candidates.append(schema_id)
+    for key in (
+        "fps_bank_member_id",
+        "member_id",
+        "bank_member_id",
+        "nspk_id",
+        "id",
+        "code",
+        "slug",
+        "bank_id",
+    ):
+        val = item.get(key)
+        if val is not None and str(val).strip():
+            candidates.append(str(val).strip())
+    for c in candidates:
+        if _is_nspk_member_id(c):
+            return c
+    return candidates[0] if candidates else None
 
 
 def _parse_bank_item(item: Any) -> FpsBank | None:
     if isinstance(item, str):
         s = item.strip()
-        if s:
+        if _is_nspk_member_id(s):
             return FpsBank(member_id=s, title=s)
+        schema_id = member_id_from_schema(s)
+        if schema_id:
+            return FpsBank(member_id=schema_id, title=schema_id)
         return None
     if not isinstance(item, dict):
         return None
-    member_id: str | None = None
-    for key in ("fps_bank_member_id", "member_id", "id", "code", "slug", "bank_id"):
-        val = item.get(key)
-        if val is not None and str(val).strip():
-            member_id = str(val).strip()
-            break
-    if not member_id:
+    member_id = _pick_member_id(item)
+    if not member_id or not _is_nspk_member_id(member_id):
         return None
     title: str | None = None
-    for key in ("name", "title", "label", "bank_name", "display_name", "short_name"):
+    for key in ("bankName", "name", "title", "label", "bank_name", "display_name", "short_name"):
         val = item.get(key)
         if val is not None and str(val).strip():
             title = str(val).strip()
@@ -71,7 +108,9 @@ def _parse_banks_payload(raw: Any) -> list[FpsBank]:
     if isinstance(raw, list):
         items = raw
     elif isinstance(raw, dict):
-        for key in ("fps_banks", "banks", "data", "items", "results"):
+        if raw.get("success") is False:
+            return []
+        for key in ("fps_banks", "banks", "data", "items", "results", "dictionary"):
             val = raw.get(key)
             if isinstance(val, list):
                 items = val
@@ -104,8 +143,6 @@ def _fetch_fps_banks_from_api(settings: Settings) -> tuple[list[FpsBank], str | 
     )
     try:
         with request.urlopen(req, timeout=max(5, int(settings.payments_api_timeout_seconds))) as resp:
-            import json
-
             raw_text = resp.read().decode("utf-8")
             raw = json.loads(raw_text) if raw_text.strip() else []
     except error.HTTPError as e:
@@ -124,8 +161,23 @@ def _fetch_fps_banks_from_api(settings: Settings) -> tuple[list[FpsBank], str | 
     return banks, None
 
 
+def _fetch_nspk_banks() -> list[FpsBank]:
+    global _nspk_cache
+    now = time.time()
+    if _nspk_cache is not None and now - _nspk_cache[0] < _CACHE_TTL_SECONDS:
+        return _nspk_cache[1]
+    req = request.Request(NSPK_BANKS_URL, method="GET", headers={"Accept": "application/json"})
+    with request.urlopen(req, timeout=30) as resp:
+        raw = json.loads(resp.read().decode("utf-8"))
+    banks = _parse_banks_payload(raw)
+    if not banks:
+        banks = list(MINIMAL_FPS_BANKS)
+    _nspk_cache = (now, banks)
+    return banks
+
+
 def get_fps_banks(settings: Settings, *, force_refresh: bool = False) -> tuple[list[FpsBank], str | None]:
-    """Список банков для СБП: из API, при ошибке — запасной список."""
+    """Список банков: API Консоль.Про → справочник НСПК → минимальный запасной список."""
     global _cache
     now = time.time()
     if (
@@ -137,9 +189,16 @@ def get_fps_banks(settings: Settings, *, force_refresh: bool = False) -> tuple[l
 
     banks, err = _fetch_fps_banks_from_api(settings)
     if not banks:
-        banks = list(FALLBACK_FPS_BANKS)
-        if err:
-            err = f"{err} (показан базовый список банков)"
+        try:
+            banks = _fetch_nspk_banks()
+            if err:
+                err = f"{err}. Показан официальный справочник НСПК."
+            else:
+                err = None
+        except Exception as nspk_exc:
+            banks = list(MINIMAL_FPS_BANKS)
+            parts = [p for p in (err, str(nspk_exc)) if p]
+            err = ". ".join(parts) + ". Показан базовый список банков."
     _cache = (now, banks, err)
     return banks, err
 
@@ -150,7 +209,13 @@ def fps_bank_title(member_id: str, banks: list[FpsBank] | None = None) -> str:
         for b in banks:
             if b.member_id == mid:
                 return b.title
-    for b in FALLBACK_FPS_BANKS:
+    for b in MINIMAL_FPS_BANKS:
         if b.member_id == mid:
             return b.title
+    try:
+        for b in _fetch_nspk_banks():
+            if b.member_id == mid:
+                return b.title
+    except Exception:
+        pass
     return mid or "—"
