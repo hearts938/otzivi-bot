@@ -24,6 +24,7 @@ from handlers.formatting import (
 from handlers.keyboards import (
     BTN_BACK_MENU,
     BTN_BACK_PLATFORMS,
+    BTN_BANK_SEARCH_AGAIN,
     BTN_PAGE_NEXT,
     BTN_PAGE_PREV,
     BTN_PROFILE,
@@ -76,7 +77,7 @@ from repo import (
 from handlers.admin.common import is_admin
 from repo import user_is_banned_now
 from services.yandex_maps import is_yandex_maps_slug
-from services.fps_banks import FpsBank, get_fps_banks
+from services.fps_banks import FpsBank, get_fps_banks, search_fps_banks
 from services.payments_api import create_fps_payment
 
 router = Router(name="user")
@@ -112,6 +113,7 @@ router.message.middleware(UserGateMiddleware())
 class WithdrawFSM(StatesGroup):
     amount = State()
     fps_phone = State()
+    fps_bank_search = State()
     fps_bank_pick = State()
 
 
@@ -130,31 +132,52 @@ def _withdraw_bank_labels(banks: list[FpsBank], page: int) -> tuple[list[str], i
     return labels, page, pages
 
 
-async def _show_withdraw_banks(
+async def _prompt_bank_search(message: Message, state: FSMContext) -> None:
+    await state.set_state(WithdrawFSM.fps_bank_search)
+    await message.answer(
+        f"🏦 <b>Банк для СБП</b>\n\n"
+        f"{blockquote('Введите название или часть названия банка, например: Сбер, Тинькофф, ВТБ, Альфа.')}",
+        parse_mode="HTML",
+        reply_markup=user_back_menu_kb(),
+    )
+
+
+async def _show_bank_search_results(
     message: Message,
     state: FSMContext,
     settings: Settings,
+    query: str,
     *,
     page: int = 0,
 ) -> None:
-    banks, load_err = await asyncio.to_thread(get_fps_banks, settings)
+    banks, _load_err = await asyncio.to_thread(get_fps_banks, settings)
     if not banks:
         await message.answer(
-            "Не удалось загрузить список банков. Попробуйте позже или обратитесь в поддержку.",
+            "Не удалось загрузить список банков. Попробуйте позже.",
             reply_markup=user_profile_kb(),
         )
         await state.clear()
         return
-    labels, page, pages = _withdraw_bank_labels(banks, page)
-    await state.update_data(withdraw_bank_page=page)
+    hits = search_fps_banks(banks, query)
+    if not hits:
+        await state.set_state(WithdrawFSM.fps_bank_search)
+        await message.answer(
+            f"По запросу «<b>{query[:40]}</b>» ничего не найдено.\n"
+            f"Попробуйте другое название: Сбер, Тинькофф, ВТБ…",
+            parse_mode="HTML",
+            reply_markup=user_back_menu_kb(),
+        )
+        return
+    labels, page, pages = _withdraw_bank_labels(hits, page)
+    await state.update_data(withdraw_bank_query=query, withdraw_bank_page=page)
     await state.set_state(WithdrawFSM.fps_bank_pick)
-    note = ""
-    if load_err:
-        note = f"\n\n{blockquote(load_err)}"
+    extra = ""
+    if len(hits) > WITHDRAW_BANKS_PAGE_SIZE:
+        extra = f" Найдено: <b>{len(hits)}</b>."
     await message.answer(
         f"🏦 <b>Выберите банк</b>\n\n"
-        f"{blockquote('Нажмите банк, к которому привязан номер для СБП.')}"
-        f"{note}",
+        f"Запрос: <b>{query[:40]}</b>.{extra}\n"
+        f"{blockquote('Нажмите нужный банк или «Искать снова».')}",
         parse_mode="HTML",
         reply_markup=withdraw_banks_kb(labels, page=page, pages=pages),
     )
@@ -777,8 +800,29 @@ async def msg_withdraw_fps_phone(message: Message, state: FSMContext, settings: 
         )
         return
     await state.update_data(withdraw_fps_phone=phone)
-    await message.answer("Загружаю список банков…")
-    await _show_withdraw_banks(message, state, settings, page=0)
+    await _prompt_bank_search(message, state)
+
+
+@router.message(WithdrawFSM.fps_bank_search, F.text)
+async def msg_withdraw_bank_search(
+    message: Message,
+    state: FSMContext,
+    settings: Settings,
+):
+    query = (message.text or "").strip()
+    if len(query) < 2:
+        await message.answer(
+            "Введите минимум 2 буквы, например <b>Сбер</b> или <b>Тинькофф</b>.",
+            parse_mode="HTML",
+            reply_markup=user_back_menu_kb(),
+        )
+        return
+    await _show_bank_search_results(message, state, settings, query, page=0)
+
+
+@router.message(WithdrawFSM.fps_bank_pick, F.text == BTN_BANK_SEARCH_AGAIN)
+async def msg_withdraw_bank_search_again(message: Message, state: FSMContext):
+    await _prompt_bank_search(message, state)
 
 
 @router.message(WithdrawFSM.fps_bank_pick, F.text.in_({BTN_PAGE_PREV, BTN_PAGE_NEXT}))
@@ -788,12 +832,16 @@ async def msg_withdraw_bank_page(
     settings: Settings,
 ):
     data = await state.get_data()
+    query = str(data.get("withdraw_bank_query") or "").strip()
+    if not query:
+        await _prompt_bank_search(message, state)
+        return
     page = int(data.get("withdraw_bank_page") or 0)
     if message.text == BTN_PAGE_PREV:
         page = max(0, page - 1)
     else:
         page += 1
-    await _show_withdraw_banks(message, state, settings, page=page)
+    await _show_bank_search_results(message, state, settings, query, page=page)
 
 
 @router.message(WithdrawFSM.fps_bank_pick, F.text)
@@ -805,8 +853,15 @@ async def msg_withdraw_bank_pick(
 ):
     bank_id = parse_withdraw_bank_pick(message.text)
     if not bank_id:
+        data = await state.get_data()
+        query = str(data.get("withdraw_bank_query") or "").strip()
+        if len((message.text or "").strip()) >= 2:
+            await _show_bank_search_results(
+                message, state, settings, (message.text or "").strip(), page=0
+            )
+            return
         await message.answer(
-            "Выберите банк кнопкой ниже или листайте список.",
+            "Выберите банк кнопкой или нажмите «Искать снова».",
             reply_markup=user_back_menu_kb(),
         )
         return

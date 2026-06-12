@@ -203,6 +203,73 @@ def get_fps_banks(settings: Settings, *, force_refresh: bool = False) -> tuple[l
     return banks, err
 
 
+def _norm_search(text: str) -> str:
+    s = (text or "").strip().lower().replace("ё", "е")
+    for ch in "-—_./\\":
+        s = s.replace(ch, " ")
+    return " ".join(s.split())
+
+
+# Популярные синонимы → подстрока в названии банка из справочника.
+_SEARCH_ALIASES: tuple[tuple[str, str], ...] = (
+    ("сбер", "сбер"),
+    ("sber", "сбер"),
+    ("тинькофф", "т банк"),
+    ("tinkoff", "т банк"),
+    ("тбанк", "т банк"),
+    ("т банк", "т банк"),
+    ("втб", "втб"),
+    ("альфа", "альфа"),
+    ("ozon", "ozon"),
+    ("озон", "ozon"),
+    ("яндекс", "яндекс"),
+    ("yandex", "яндекс"),
+    ("райф", "райфф"),
+    ("газпром", "газпром"),
+    ("совком", "совком"),
+    ("россельхоз", "россельхоз"),
+    ("рсхб", "россельхоз"),
+    ("почта", "почта"),
+    ("мтс", "мтс"),
+    ("открытие", "открыт"),
+    ("псб", "псб"),
+    ("промсвязь", "промсвяз"),
+)
+
+
+def _expand_search_tokens(query: str) -> list[str]:
+    q = _norm_search(query)
+    if not q:
+        return []
+    tokens = q.split()
+    expanded: list[str] = []
+    for token in tokens:
+        repl = token
+        for alias, needle in _SEARCH_ALIASES:
+            if token == _norm_search(alias) or token.startswith(_norm_search(alias)):
+                repl = needle
+                break
+        expanded.append(repl)
+    return expanded
+
+
+def search_fps_banks(banks: list[FpsBank], query: str) -> list[FpsBank]:
+    """Поиск банка по части названия (регистр и «ё» не важны)."""
+    tokens = _expand_search_tokens(query)
+    if not tokens:
+        return []
+    hits: list[FpsBank] = []
+    for bank in banks:
+        title = _norm_search(bank.title)
+        if all(token in title for token in tokens):
+            hits.append(bank)
+    if not hits and len(tokens) == 1:
+        token = tokens[0]
+        hits = [b for b in banks if token in _norm_search(b.title)]
+    hits.sort(key=lambda b: (len(b.title), b.title.casefold()))
+    return hits
+
+
 def fps_bank_title(member_id: str, banks: list[FpsBank] | None = None) -> str:
     mid = (member_id or "").strip()
     if banks:

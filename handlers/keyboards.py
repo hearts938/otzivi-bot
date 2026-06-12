@@ -117,6 +117,7 @@ BTN_CANCEL_INPUT = "❌ Отмена"
 
 BTN_PAGE_PREV = "◀️ Предыдущая страница"
 BTN_PAGE_NEXT = "▶️ Следующая страница"
+BTN_BANK_SEARCH_AGAIN = "🔍 Искать снова"
 
 USERS_PAGE_SIZE = 7
 TEXTS_PAGE_SIZE = 8
@@ -177,6 +178,7 @@ def withdraw_banks_kb(bank_labels: list[str], *, page: int, pages: int) -> Reply
         nav.append(BTN_PAGE_NEXT)
     if nav:
         rows.append(nav)
+    rows.append([BTN_BANK_SEARCH_AGAIN])
     rows.append([BTN_BACK_MENU])
     return _kb(rows)
 
