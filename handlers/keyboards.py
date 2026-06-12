@@ -120,6 +120,7 @@ BTN_PAGE_NEXT = "▶️ Следующая страница"
 
 USERS_PAGE_SIZE = 7
 TEXTS_PAGE_SIZE = 8
+WITHDRAW_BANKS_PAGE_SIZE = 8
 
 
 def _kb(rows: list[list[str]], *, persistent: bool = True) -> ReplyKeyboardMarkup:
@@ -153,6 +154,31 @@ def user_back_menu_kb() -> ReplyKeyboardMarkup:
 
 def user_profile_kb() -> ReplyKeyboardMarkup:
     return _kb(_rows(BTN_WITHDRAW, BTN_BACK_MENU))
+
+
+def withdraw_bank_label(member_id: str, title: str) -> str:
+    return f"🏦 {title[:30]} ·#{member_id}"
+
+
+def parse_withdraw_bank_pick(text: str | None) -> str | None:
+    text = _btn_text(text)
+    if not text or not text.startswith("🏦") or "·#" not in text:
+        return None
+    member_id = text.rsplit("·#", 1)[1].strip()
+    return member_id or None
+
+
+def withdraw_banks_kb(bank_labels: list[str], *, page: int, pages: int) -> ReplyKeyboardMarkup:
+    rows = [[lbl] for lbl in bank_labels]
+    nav: list[str] = []
+    if page > 0:
+        nav.append(BTN_PAGE_PREV)
+    if page < pages - 1:
+        nav.append(BTN_PAGE_NEXT)
+    if nav:
+        rows.append(nav)
+    rows.append([BTN_BACK_MENU])
+    return _kb(rows)
 
 
 def user_platforms_kb(labels: list[str]) -> ReplyKeyboardMarkup:

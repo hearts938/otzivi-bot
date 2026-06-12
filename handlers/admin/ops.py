@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from config import Settings
 from handlers.admin.common import is_admin
-from handlers.formatting import blockquote, section
+from handlers.formatting import blockquote, esc_html, section, section_rich
 from handlers.keyboards import (
     A_BALANCE,
     BTN_BALANCE_CREDIT,
@@ -65,7 +65,7 @@ async def bal_start(message: Message, settings: Settings, state: FSMContext):
 
 
 def _balance_user_card(u) -> str:
-    un = f"@{u.username}" if u.username else "—"
+    un = esc_html(f"@{u.username}" if u.username else "—")
     pending = float(u.pending_balance or 0)
     return (
         f"Username: <b>{un}</b>\n"
@@ -99,7 +99,7 @@ async def bal_user(
     await state.set_state(BalanceFSM.action)
     await message.answer(
         f"💳 <b>Баланс пользователя</b>\n\n"
-        f"{section('Данные', _balance_user_card(u))}\n\n"
+        f"{section_rich('Данные', _balance_user_card(u))}\n\n"
         f"{blockquote('Выберите: начислить или списать с баланса к выплате.')}",
         parse_mode="HTML",
         reply_markup=admin_balance_action_kb(),
@@ -170,7 +170,7 @@ async def bal_amt(
     op = "Начислено" if credit else "Списано"
     await message.answer(
         f"✅ <b>{op} {amount:.2f} ₽</b>\n\n"
-        f"{section('Пользователь', _balance_user_card(u2))}",
+        f"{section_rich('Пользователь', _balance_user_card(u2))}",
         parse_mode="HTML",
         reply_markup=admin_back_home_kb(),
     )
@@ -263,9 +263,9 @@ async def out_send(
         tid = u.telegram_id
     try:
         await message.bot.send_message(tid, txt)
-        un = f"@{u.username}" if u.username else "без username"
+        un = esc_html(f"@{u.username}" if u.username else "без username")
         await message.answer(
-            f"✅ Отправлено\n\n{section('Получатель', f'{un}\nID <code>{tid}</code>')}",
+            f"✅ Отправлено\n\n{section_rich('Получатель', f'{un}\nID <code>{tid}</code>')}",
             parse_mode="HTML",
             reply_markup=admin_back_home_kb(),
         )

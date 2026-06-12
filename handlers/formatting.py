@@ -29,9 +29,16 @@ def section(title: str, body: str) -> str:
     return f"<b>{esc_html(title)}</b>\n{blockquote(body)}"
 
 
+def section_rich(title: str, body: str) -> str:
+    """Секция с HTML в теле (пользовательские поля — через esc_html)."""
+    return f"<b>{esc_html(title)}</b>\n{blockquote_rich(body)}"
+
+
 def tg_peer_lines(tg: TgUser) -> str:
-    un = f"@{tg.username}" if tg.username else "—"
-    name = " ".join(x for x in [tg.first_name or "", tg.last_name or ""] if x).strip() or "—"
+    un = esc_html(f"@{tg.username}" if tg.username else "—")
+    name = esc_html(
+        " ".join(x for x in [tg.first_name or "", tg.last_name or ""] if x).strip() or "—"
+    )
     return (
         f"Telegram ID: <code>{tg.id}</code>\n"
         f"Username: {un}\n"
@@ -44,16 +51,20 @@ def account_status_label(u: User) -> str:
 
 
 def db_user_lines(u: User) -> str:
-    un = f"@{u.username}" if u.username else "—"
-    name = " ".join(x for x in [u.first_name or "", u.last_name or ""] if x).strip() or "—"
+    un = esc_html(f"@{u.username}" if u.username else "—")
+    name = esc_html(
+        " ".join(x for x in [u.first_name or "", u.last_name or ""] if x).strip() or "—"
+    )
+    platform_name = esc_html(u.platform_account_name or "—")
+    ref_code = esc_html(u.referral_code)
     return (
         f"ID в базе: <code>{u.id}</code>\n"
         f"Telegram ID: <code>{u.telegram_id}</code>\n"
         f"Username: {un}\n"
         f"Имя: {name}\n"
         f"Пол: {gender_label(u.gender)}\n"
-        f"Ник на площадках: {u.platform_account_name or '—'}\n"
-        f"Реф. код: <code>{u.referral_code}</code>"
+        f"Ник на площадках: {platform_name}\n"
+        f"Реф. код: <code>{ref_code}</code>"
     )
 
 
@@ -61,7 +72,7 @@ def main_menu_text(u: User, ref_link: str) -> str:
     account_body = f"{db_user_lines(u)}\n\nСтатус: <b>{account_status_label(u)}</b>"
     return (
         f"🏠 <b>Главное меню</b>\n\n"
-        f"{section('Ваш аккаунт', account_body)}\n\n"
+        f"{section_rich('Ваш аккаунт', account_body)}\n\n"
         f"{section('Реферальная ссылка', ref_link)}"
     )
 
@@ -165,8 +176,8 @@ def referral_text(
     )
     return (
         f"🔗 <b>Реферальная программа</b>\n\n"
-        f"{section('Статистика', _referral_stats_block(referred_count, u.referral_earned_total))}\n\n"
-        f"{section('Как это работает', how)}\n\n"
+        f"{section_rich('Статистика', _referral_stats_block(referred_count, u.referral_earned_total))}\n\n"
+        f"{section_rich('Как это работает', how)}\n\n"
         f"{section('Ссылка для приглашения', link)}"
     )
 
@@ -204,27 +215,28 @@ def tasks_list_header(count: int) -> str:
 
 
 def task_detail_header(task, u: User) -> str:
-    name = task.customer_name or task.title or f"Задание #{task.id}"
+    name = esc_html(task.customer_name or task.title or f"Задание #{task.id}")
     task_body = name
     if task.link:
-        task_body = f"{task_body}\n{task.link}"
+        task_body = f"{task_body}\n{esc_html(task.link)}"
     prof = f"Пол: {gender_label(u.gender)}\nTelegram ID: <code>{u.telegram_id}</code>"
     return (
         f"📋 <b>{name}</b>\n\n"
         f"{section('Задание', task_body)}\n\n"
-        f"{section('Ваш профиль', prof)}\n\n"
+        f"{section_rich('Ваш профиль', prof)}\n\n"
         f"{blockquote('Нажмите «Взять задание» для выбранного текста.')}"
     )
 
 
 def texts_pick_header(task, texts_total: int, page: int, pages: int) -> str:
-    name = task.customer_name or task.title or f"Задание #{task.id}"
-    link_line = f"\n{task.link}" if task.link else ""
-    page_note = f"Страница <b>{page + 1}</b> из <b>{pages}</b>." if pages > 1 else ""
-    return (
-        f"📋 <b>{name}</b>{link_line}\n\n"
-        f"{blockquote(f'Свободных текстов: {texts_total}. Выберите номер кнопкой — текст откроется только после выбора. {page_note}'.strip())}"
+    name = esc_html(task.customer_name or task.title or f"Задание #{task.id}")
+    link_line = f"\n{esc_html(task.link)}" if task.link else ""
+    page_note = f" Страница <b>{page + 1}</b> из <b>{pages}</b>." if pages > 1 else ""
+    hint = (
+        f"Свободных текстов: {texts_total}. "
+        f"Выберите номер кнопкой — текст откроется только после выбора.{page_note}"
     )
+    return f"📋 <b>{name}</b>{link_line}\n\n{blockquote_rich(hint)}"
 
 
 def users_admin_summary_text(
@@ -232,7 +244,7 @@ def users_admin_summary_text(
 ) -> str:
     body = "\n\n".join(lines) if lines else "На этой странице никого нет."
     footer = f"Всего пользователей: <b>{total}</b>. Страница <b>{page + 1}</b> из <b>{pages}</b>."
-    return f"📊 <b>Сводка пользователей</b>\n\n{body}\n\n{blockquote(footer)}"
+    return f"📊 <b>Сводка пользователей</b>\n\n{body}\n\n{blockquote_rich(footer)}"
 
 
 def users_admin_list_text(*, page: int, pages: int, total: int) -> str:
@@ -265,7 +277,7 @@ def assignment_message(task, claimed, *, claim_minutes: int = 60, minutes_left: 
     instr_block = f"{section('Инструкция', instr)}\n\n" if instr else ""
     return (
         f"📥 <b>Задание в работе</b>\n\n"
-        f"{section('Срок', f'Осталось около <b>{left}</b> мин из {claim_minutes}.')}\n\n"
+        f"{section_rich('Срок', f'Осталось около <b>{left}</b> мин из {claim_minutes}.')}\n\n"
         f"{section('Оплата за отзыв', pay)}\n\n"
         f"{instr_block}"
         f"<b>Ссылка</b>\n{link}\n\n"
@@ -276,21 +288,21 @@ def assignment_message(task, claimed, *, claim_minutes: int = 60, minutes_left: 
 
 def admin_submission_review_text(sub, task) -> str:
     u = sub.user
-    un = f"@{u.username}" if u.username else "—"
-    name = task.customer_name or task.title or f"Задание #{task.id}"
+    un = esc_html(f"@{u.username}" if u.username else "—")
+    name = esc_html(task.customer_name or task.title or f"Задание #{task.id}")
     done = sub.completed_at or sub.created_at
     done_s = done.strftime("%d.%m.%Y %H:%M") if done else "—"
     executor = (
         f"Username: {un}\n"
         f"Telegram ID: <code>{u.telegram_id}</code>\n"
-        f"Имя на площадке: {u.platform_account_name or '—'}\n"
+        f"Имя на площадке: {esc_html(u.platform_account_name or '—')}\n"
         f"Пол: {gender_label(u.gender)}"
     )
-    task_info = f"<b>{name}</b>\n{task.link or '—'}"
+    task_info = f"<b>{name}</b>\n{esc_html(task.link or '—')}"
     return (
         f"📝 <b>Отзыв на проверке #{sub.id}</b>\n\n"
-        f"{section('Исполнитель', executor)}\n\n"
-        f"{section('Задание', task_info)}\n\n"
+        f"{section_rich('Исполнитель', executor)}\n\n"
+        f"{section_rich('Задание', task_info)}\n\n"
         f"{section('Текст отзыва', sub.review_text[:3500])}\n\n"
         f"{section('Дата выполнения', done_s)}"
     )
@@ -303,7 +315,7 @@ claimed_text_message = assignment_message
 def onboarding_welcome(tg: TgUser) -> str:
     return (
         f"👋 <b>Добро пожаловать!</b>\n\n"
-        f"{section('Ваш Telegram', tg_peer_lines(tg))}\n\n"
+        f"{section_rich('Ваш Telegram', tg_peer_lines(tg))}\n\n"
         f"{blockquote('Короткий опрос займёт 1–2 минуты. Шаг 1 из 2 — укажите пол кнопкой ниже.')}"
     )
 
@@ -311,7 +323,7 @@ def onboarding_welcome(tg: TgUser) -> str:
 def admin_home_text(admin_tg: TgUser) -> str:
     return (
         f"🛡 <b>Панель администратора</b>\n\n"
-        f"{section('Вы вошли как', tg_peer_lines(admin_tg))}\n\n"
+        f"{section_rich('Вы вошли как', tg_peer_lines(admin_tg))}\n\n"
         f"{blockquote('Выберите раздел кнопкой на клавиатуре.')}"
     )
 
@@ -330,18 +342,18 @@ def admin_user_card_text(u: User, done: int, d_act: int, w_act: int, m_act: int)
     )
     return (
         f"👤 <b>Карточка пользователя</b>\n\n"
-        f"{section('Аккаунт', db_user_lines(u))}\n\n"
-        f"{section('Статистика', stats)}\n\n"
-        f"{section('Финансы', money)}"
+        f"{section_rich('Аккаунт', db_user_lines(u))}\n\n"
+        f"{section_rich('Статистика', stats)}\n\n"
+        f"{section_rich('Финансы', money)}"
     )
 
 
 def support_ticket_admin_text(ticket: SupportTicket, user: User) -> str:
-    un = f"@{user.username}" if user.username else "—"
+    un = esc_html(f"@{user.username}" if user.username else "—")
     who = (
         f"Обращение <b>·#sup{ticket.id}</b>\n"
         f"Пользователь: {un} (ID <code>{user.telegram_id}</code>)\n"
         f"Внутр. ID: <code>{user.id}</code>"
     )
     body = (ticket.text or "—").strip()
-    return f"📩 <b>Поддержка</b>\n\n{section('От кого', who)}\n\n{section('Текст', body)}"
+    return f"📩 <b>Поддержка</b>\n\n{section_rich('От кого', who)}\n\n{section('Текст', body)}"

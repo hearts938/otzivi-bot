@@ -24,6 +24,8 @@ from handlers.formatting import (
 from handlers.keyboards import (
     BTN_BACK_MENU,
     BTN_BACK_PLATFORMS,
+    BTN_PAGE_NEXT,
+    BTN_PAGE_PREV,
     BTN_PROFILE,
     BTN_REFERRAL,
     BTN_WITHDRAW,
@@ -31,8 +33,10 @@ from handlers.keyboards import (
     BTN_TASK_REFUSE,
     BTN_TASKS,
     BTN_BACK_TASKS,
+    WITHDRAW_BANKS_PAGE_SIZE,
     parse_task_pick,
     parse_user_platform_pick,
+    parse_withdraw_bank_pick,
     task_pick_label,
     user_back_menu_kb,
     user_main_kb,
@@ -41,6 +45,8 @@ from handlers.keyboards import (
     user_profile_kb,
     user_task_actions_kb,
     user_tasks_kb,
+    withdraw_bank_label,
+    withdraw_banks_kb,
 )
 from config import Settings, get_settings
 from handlers.menu_common import return_to_main_menu
@@ -59,6 +65,7 @@ from repo import (
     count_approved_submissions,
     count_referred_users,
     create_withdrawal_and_debit,
+    fail_withdrawal_and_refund,
     release_expired_task_claims,
     release_task_text,
     touch_activity,
@@ -69,6 +76,7 @@ from repo import (
 from handlers.admin.common import is_admin
 from repo import user_is_banned_now
 from services.yandex_maps import is_yandex_maps_slug
+from services.fps_banks import FpsBank, get_fps_banks
 from services.payments_api import create_fps_payment
 
 router = Router(name="user")
@@ -104,7 +112,169 @@ router.message.middleware(UserGateMiddleware())
 class WithdrawFSM(StatesGroup):
     amount = State()
     fps_phone = State()
-    fps_bank_id = State()
+    fps_bank_pick = State()
+
+
+def _withdraw_bank_pages(total: int) -> int:
+    if total <= 0:
+        return 1
+    return (total + WITHDRAW_BANKS_PAGE_SIZE - 1) // WITHDRAW_BANKS_PAGE_SIZE
+
+
+def _withdraw_bank_labels(banks: list[FpsBank], page: int) -> tuple[list[str], int, int]:
+    pages = _withdraw_bank_pages(len(banks))
+    page = max(0, min(page, pages - 1))
+    start = page * WITHDRAW_BANKS_PAGE_SIZE
+    chunk = banks[start : start + WITHDRAW_BANKS_PAGE_SIZE]
+    labels = [withdraw_bank_label(b.member_id, b.title) for b in chunk]
+    return labels, page, pages
+
+
+async def _show_withdraw_banks(
+    message: Message,
+    state: FSMContext,
+    settings: Settings,
+    *,
+    page: int = 0,
+) -> None:
+    banks, load_err = await asyncio.to_thread(get_fps_banks, settings)
+    if not banks:
+        await message.answer(
+            "Не удалось загрузить список банков. Попробуйте позже или обратитесь в поддержку.",
+            reply_markup=user_profile_kb(),
+        )
+        await state.clear()
+        return
+    labels, page, pages = _withdraw_bank_labels(banks, page)
+    await state.update_data(withdraw_bank_page=page)
+    await state.set_state(WithdrawFSM.fps_bank_pick)
+    note = ""
+    if load_err:
+        note = f"\n\n{blockquote(load_err)}"
+    await message.answer(
+        f"🏦 <b>Выберите банк</b>\n\n"
+        f"{blockquote('Нажмите банк, к которому привязан номер для СБП.')}"
+        f"{note}",
+        parse_mode="HTML",
+        reply_markup=withdraw_banks_kb(labels, page=page, pages=pages),
+    )
+
+
+async def _complete_withdrawal(
+    message: Message,
+    state: FSMContext,
+    session_factory: async_sessionmaker[AsyncSession],
+    settings: Settings,
+    *,
+    bank_id: str,
+    bank_title: str,
+) -> None:
+    data = await state.get_data()
+    amount = float(data.get("withdraw_amount") or 0)
+    phone = str(data.get("withdraw_fps_phone") or "")
+    if amount <= 0 or not phone:
+        await state.clear()
+        await message.answer("Сессия вывода сброшена. Начните снова.", reply_markup=user_profile_kb())
+        return
+    await message.answer("Создаю заявку и списываю баланс, подождите...")
+    request_id: int | None = None
+    new_balance: float = 0.0
+    tg_id: int = 0
+    first_name: str | None = None
+    last_name: str | None = None
+    async with session_factory() as session:
+        u_db = await ensure_user(
+            session,
+            message.from_user.id,
+            message.from_user.username,
+            referred_by_id=None,
+            first_name=message.from_user.first_name,
+            last_name=message.from_user.last_name,
+        )
+        created = await create_withdrawal_and_debit(
+            session,
+            user_id=u_db.id,
+            amount=amount,
+            fps_phone=phone,
+            fps_bank_member_id=bank_id,
+        )
+        if created is None:
+            await state.clear()
+            await message.answer(
+                "Недостаточно средств на балансе к выплате.",
+                reply_markup=user_profile_kb(),
+            )
+            return
+        wr_db, debited_user = created
+        request_id = wr_db.id
+        new_balance = float(debited_user.balance or 0)
+        tg_id = int(debited_user.telegram_id)
+        first_name = debited_user.first_name
+        last_name = debited_user.last_name
+    result = await asyncio.to_thread(
+        create_fps_payment,
+        settings,
+        amount=amount,
+        service_title="Вывод средств",
+        purpose=f"Вывод средств пользователю {tg_id}",
+        fps_mobile_phone=phone,
+        fps_bank_member_id=bank_id,
+        first_name=first_name,
+        last_name=last_name,
+        patronymic=None,
+    )
+    wr = None
+    refunded_balance = new_balance
+    async with session_factory() as session:
+        if result.ok:
+            wr = await update_withdrawal_request_status(
+                session,
+                int(request_id or 0),
+                status=result.status,
+                external_payment_id=result.payment_id,
+                error_message=result.error_message,
+            )
+        else:
+            refunded = await fail_withdrawal_and_refund(
+                session,
+                int(request_id or 0),
+                status=result.status,
+                external_payment_id=result.payment_id,
+                error_message=result.error_message,
+            )
+            if refunded:
+                wr, refunded_user = refunded
+                refunded_balance = float(refunded_user.balance or 0)
+    await state.clear()
+    if result.ok:
+        await message.answer(
+            f"✅ Выплата создана.\n"
+            f"Банк: <b>{bank_title}</b>\n"
+            f"ID платежа: <code>{result.payment_id or '—'}</code>\n"
+            f"Статус: <b>{result.status}</b>\n"
+            f"Новый баланс: <b>{new_balance:.2f} ₽</b>",
+            parse_mode="HTML",
+            reply_markup=user_profile_kb(),
+        )
+        return
+    err = (result.error_message or "неизвестно")[:350]
+    hint = ""
+    if "access denied" in err.lower():
+        hint = (
+            "\n\nСообщите администратору: в .env на сервере неверный "
+            "<code>PAYMENTS_API_AUTH</code> (токен Консоль.Про)."
+        )
+    await message.answer(
+        f"❌ Не удалось выполнить вывод.\n"
+        f"Банк: <b>{bank_title}</b>\n"
+        f"Статус: <b>{result.status}</b>\n"
+        f"Ошибка: <code>{err}</code>\n"
+        f"Номер заявки: <code>{wr.id if wr else request_id or '—'}</code>\n"
+        f"Сумма <b>{amount:.2f} ₽</b> возвращена на баланс: <b>{refunded_balance:.2f} ₽</b>"
+        f"{hint}",
+        parse_mode="HTML",
+        reply_markup=user_profile_kb(),
+    )
 
 
 @router.message(F.text == BTN_BACK_MENU)
@@ -592,7 +762,7 @@ async def msg_withdraw_amount(
 
 
 @router.message(WithdrawFSM.fps_phone, F.text)
-async def msg_withdraw_fps_phone(message: Message, state: FSMContext):
+async def msg_withdraw_fps_phone(message: Message, state: FSMContext, settings: Settings):
     raw = (message.text or "").strip().replace(" ", "")
     phone = raw
     if phone.startswith("8") and len(phone) == 11:
@@ -607,106 +777,51 @@ async def msg_withdraw_fps_phone(message: Message, state: FSMContext):
         )
         return
     await state.update_data(withdraw_fps_phone=phone)
-    await state.set_state(WithdrawFSM.fps_bank_id)
-    await message.answer(
-        "Введите <b>fps_bank_member_id</b> банка (из справочника API).",
-        parse_mode="HTML",
-        reply_markup=user_back_menu_kb(),
-    )
+    await message.answer("Загружаю список банков…")
+    await _show_withdraw_banks(message, state, settings, page=0)
 
 
-@router.message(WithdrawFSM.fps_bank_id, F.text)
-async def msg_withdraw_fps_bank(
+@router.message(WithdrawFSM.fps_bank_pick, F.text.in_({BTN_PAGE_PREV, BTN_PAGE_NEXT}))
+async def msg_withdraw_bank_page(
+    message: Message,
+    state: FSMContext,
+    settings: Settings,
+):
+    data = await state.get_data()
+    page = int(data.get("withdraw_bank_page") or 0)
+    if message.text == BTN_PAGE_PREV:
+        page = max(0, page - 1)
+    else:
+        page += 1
+    await _show_withdraw_banks(message, state, settings, page=page)
+
+
+@router.message(WithdrawFSM.fps_bank_pick, F.text)
+async def msg_withdraw_bank_pick(
     message: Message,
     session_factory: async_sessionmaker[AsyncSession],
     settings: Settings,
     state: FSMContext,
 ):
-    bank_id = (message.text or "").strip()
-    if len(bank_id) < 3:
-        await message.answer("Введите корректный fps_bank_member_id.", reply_markup=user_back_menu_kb())
-        return
-    data = await state.get_data()
-    amount = float(data.get("withdraw_amount") or 0)
-    phone = str(data.get("withdraw_fps_phone") or "")
-    if amount <= 0 or not phone:
-        await state.clear()
-        await message.answer("Сессия вывода сброшена. Начните снова.", reply_markup=user_profile_kb())
-        return
-    await message.answer("Создаю заявку и списываю баланс, подождите...")
-    request_id: int | None = None
-    new_balance: float = 0.0
-    tg_id: int = 0
-    first_name: str | None = None
-    last_name: str | None = None
-    async with session_factory() as session:
-        u_db = await ensure_user(
-            session,
-            message.from_user.id,
-            message.from_user.username,
-            referred_by_id=None,
-            first_name=message.from_user.first_name,
-            last_name=message.from_user.last_name,
-        )
-        created = await create_withdrawal_and_debit(
-            session,
-            user_id=u_db.id,
-            amount=amount,
-            fps_phone=phone,
-            fps_bank_member_id=bank_id,
-        )
-        if created is None:
-            await state.clear()
-            await message.answer(
-                "Недостаточно средств на балансе к выплате.",
-                reply_markup=user_profile_kb(),
-            )
-            return
-        wr_db, debited_user = created
-        request_id = wr_db.id
-        new_balance = float(debited_user.balance or 0)
-        tg_id = int(debited_user.telegram_id)
-        first_name = debited_user.first_name
-        last_name = debited_user.last_name
-    result = await asyncio.to_thread(
-        create_fps_payment,
-        settings,
-        amount=amount,
-        service_title="Вывод средств",
-        purpose=f"Вывод средств пользователю {tg_id}",
-        fps_mobile_phone=phone,
-        fps_bank_member_id=bank_id,
-        first_name=first_name,
-        last_name=last_name,
-        patronymic=None,
-    )
-    wr = None
-    async with session_factory() as session:
-        wr = await update_withdrawal_request_status(
-            session,
-            int(request_id or 0),
-            status=result.status,
-            external_payment_id=result.payment_id,
-            error_message=result.error_message,
-        )
-    await state.clear()
-    if result.ok:
+    bank_id = parse_withdraw_bank_pick(message.text)
+    if not bank_id:
         await message.answer(
-            f"✅ Выплата создана.\n"
-            f"ID платежа: <code>{result.payment_id or '—'}</code>\n"
-            f"Статус: <b>{result.status}</b>\n"
-            f"Новый баланс: <b>{new_balance:.2f} ₽</b>",
-            parse_mode="HTML",
-            reply_markup=user_profile_kb(),
+            "Выберите банк кнопкой ниже или листайте список.",
+            reply_markup=user_back_menu_kb(),
         )
         return
-    await message.answer(
-        f"❌ Не удалось выполнить вывод.\n"
-        f"Статус: <b>{result.status}</b>\n"
-        f"Ошибка: <code>{(result.error_message or 'неизвестно')[:350]}</code>\n"
-        f"Номер заявки: <code>{wr.id if wr else request_id or '—'}</code>",
-        parse_mode="HTML",
-        reply_markup=user_profile_kb(),
+    banks, _ = await asyncio.to_thread(get_fps_banks, settings)
+    known = {b.member_id: b.title for b in banks}
+    if bank_id not in known:
+        await message.answer("Банк не найден. Выберите банк из списка кнопок.")
+        return
+    await _complete_withdrawal(
+        message,
+        state,
+        session_factory,
+        settings,
+        bank_id=bank_id,
+        bank_title=known[bank_id],
     )
 
 

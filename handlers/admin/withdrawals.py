@@ -16,6 +16,7 @@ from handlers.keyboards import (
     parse_withdraw_action,
 )
 from repo import list_pending_withdrawals, set_withdrawal_admin_decision
+from services.fps_banks import fps_bank_title
 
 router = Router(name="admin_withdrawals")
 
@@ -30,7 +31,7 @@ def _withdraw_card_text(req) -> str:
         f"Сумма: {req.amount:.2f} ₽\n"
         f"Пользователь: {un} (ID {tg})\n"
         f"Телефон СБП: {req.fps_phone or '—'}\n"
-        f"fps_bank_member_id: {req.fps_bank_member_id or '—'}\n"
+        f"Банк СБП: {fps_bank_title(req.fps_bank_member_id or '')}\n"
         f"Статус API: {req.status}\n"
         f"ID платежа API: {pid}\n"
         f"Ошибка API: {err}"

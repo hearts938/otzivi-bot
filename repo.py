@@ -278,6 +278,34 @@ async def update_withdrawal_request_status(
     return row
 
 
+async def fail_withdrawal_and_refund(
+    session: AsyncSession,
+    request_id: int,
+    *,
+    status: str,
+    external_payment_id: str | None,
+    error_message: str | None,
+) -> tuple[WithdrawalRequest, User] | None:
+    """Помечает заявку неуспешной и возвращает списанную сумму на баланс."""
+    from database.models import WithdrawalStatus
+
+    row = await session.get(WithdrawalRequest, request_id, with_for_update=True)
+    if not row:
+        return None
+    u = await session.get(User, row.user_id, with_for_update=True)
+    if not u:
+        return None
+    if row.status == WithdrawalStatus.CREATED and not row.external_payment_id:
+        u.balance = float(u.balance or 0) + float(row.amount or 0)
+    row.status = (status or WithdrawalStatus.FAILED)[:32]
+    row.external_payment_id = (external_payment_id or "")[:64] or None
+    row.error_message = error_message
+    await session.commit()
+    await session.refresh(row)
+    await session.refresh(u)
+    return row, u
+
+
 async def list_pending_withdrawals(
     session: AsyncSession, limit: int = 30
 ) -> list[WithdrawalRequest]:

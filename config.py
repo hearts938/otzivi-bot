@@ -13,6 +13,15 @@ def _parse_admin_ids(raw: str | None) -> set[int]:
     return {int(x.strip()) for x in raw.split(",") if x.strip().isdigit()}
 
 
+def _normalize_bearer_auth(raw: str | None) -> str:
+    auth = (raw or "").strip()
+    if not auth:
+        return ""
+    if not auth.lower().startswith("bearer "):
+        return f"Bearer {auth}"
+    return auth
+
+
 @dataclass(frozen=True)
 class Settings:
     bot_token: str
@@ -71,7 +80,7 @@ def get_settings() -> Settings:
         yandex_answer_min_seconds=int(os.getenv("YANDEX_ANSWER_MIN_SECONDS", "5")),
         yandex_cheat_ban_days=int(os.getenv("YANDEX_CHEAT_BAN_DAYS", "7")),
         payments_api_base_url=os.getenv("PAYMENTS_API_BASE_URL", "https://api-payments.konsol.pro").strip(),
-        payments_api_auth=os.getenv("PAYMENTS_API_AUTH", "").strip(),
+        payments_api_auth=_normalize_bearer_auth(os.getenv("PAYMENTS_API_AUTH", "")),
         payments_api_timeout_seconds=int(os.getenv("PAYMENTS_API_TIMEOUT_SECONDS", "20")),
         reviews_stock_report_hour=int(os.getenv("REVIEWS_STOCK_REPORT_HOUR", "22")),
         reviews_stock_report_minute=int(os.getenv("REVIEWS_STOCK_REPORT_MINUTE", "0")),

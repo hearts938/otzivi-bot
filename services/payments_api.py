@@ -28,6 +28,22 @@ def _make_url(base_url: str, path: str) -> str:
     return f"{base_url.rstrip('/')}/{path.lstrip('/')}"
 
 
+def _parse_api_error_body(body: str) -> str | None:
+    text = (body or "").strip()
+    if not text:
+        return None
+    try:
+        data = json.loads(text)
+    except json.JSONDecodeError:
+        return text[:500]
+    if isinstance(data, dict):
+        for key in ("error", "message", "error_message", "detail"):
+            val = data.get(key)
+            if val:
+                return str(val)[:500]
+    return text[:500]
+
+
 def _http_json(
     *,
     method: str,
@@ -107,7 +123,7 @@ def create_fps_payment(
             body = e.read().decode("utf-8")
         except Exception:
             body = ""
-        em = body.strip() or f"HTTP {e.code}"
+        em = _parse_api_error_body(body) or f"HTTP {e.code}"
         return PaymentCreateResult(ok=False, status="failed", payment_id=None, error_message=em)
     except Exception as e:
         return PaymentCreateResult(ok=False, status="failed", payment_id=None, error_message=str(e))
