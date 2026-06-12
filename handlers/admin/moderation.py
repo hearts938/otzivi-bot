@@ -23,7 +23,7 @@ from handlers.keyboards import (
 from repo import get_default_platform, import_review_texts, import_review_texts_to_task
 from services.publish_scheduler import activate_due_texts
 from services.rewards import approve_submission, reject_submission
-from services.texts_import import parse_review_texts_excel
+from services.texts_import import looks_like_xlsx, parse_review_texts_excel
 
 router = Router(name="admin_mod")
 
@@ -56,13 +56,16 @@ async def adm_import_file(
     data = await state.get_data()
     pool_tid = data.get("pool_task_id")
     doc: Document = message.document
-    name = (doc.file_name or "").lower()
-    if not name.endswith(".xlsx"):
-        await message.answer("Нужен .xlsx", reply_markup=admin_cancel_kb())
-        return
     file = await message.bot.get_file(doc.file_id)
     buf = await message.bot.download_file(file.file_path)
     raw = buf.read()
+    if not looks_like_xlsx(doc.file_name, raw):
+        await message.answer(
+            "Нужен файл Excel .xlsx (не .xls). "
+            "Сохраните книгу как «Книга Excel (.xlsx)».",
+            reply_markup=admin_cancel_kb(),
+        )
+        return
     items, errs = await asyncio.to_thread(
         parse_review_texts_excel, raw, settings.app_timezone
     )

@@ -13,9 +13,18 @@ from aiogram.exceptions import TelegramBadRequest, TelegramForbiddenError
 from sqlalchemy import and_, case, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from html import escape as html_escape
+
 from config import Settings, get_settings
 from database.models import Platform, Task, TaskText
-from handlers.formatting import blockquote, esc_html
+
+
+def _esc(text: object) -> str:
+    return html_escape(str(text or ""), quote=False)
+
+
+def _blockquote(body: str) -> str:
+    return f"<blockquote>{_esc(body.strip())}</blockquote>"
 
 logger = logging.getLogger(__name__)
 
@@ -104,7 +113,7 @@ def _report_title(settings: Settings) -> str:
     now_local = datetime.now(tz)
     return (
         f"📊 <b>Детализация по отзывам</b>\n"
-        f"<i>{now_local.strftime('%d.%m.%Y %H:%M')} ({esc_html(settings.app_timezone)})</i>"
+        f"<i>{now_local.strftime('%d.%m.%Y %H:%M')} ({_esc(settings.app_timezone)})</i>"
     )
 
 
@@ -112,7 +121,7 @@ def build_reviews_stock_message(rows: list[PlatformReviewStock], settings: Setti
     if not rows:
         return (
             f"{_report_title(settings)}\n\n"
-            f"{blockquote('Нет активных платформ с текстами в пуле.')}"
+            f"{_blockquote('Нет активных платформ с текстами в пуле.')}"
         )
     lines: list[str] = [_report_title(settings), ""]
     total_free = 0
@@ -122,7 +131,7 @@ def build_reviews_stock_message(rows: list[PlatformReviewStock], settings: Setti
         total_free += row.free_total
         total_work += row.in_work
         total_sched += row.scheduled
-        lines.append(f"🌐 <b>{esc_html(row.platform_name)}</b>")
+        lines.append(f"🌐 <b>{_esc(row.platform_name)}</b>")
         lines.append(
             f"Свободно: <b>{row.free_total}</b> "
             f"(М: {row.free_male}, Ж: {row.free_female})"
@@ -139,7 +148,7 @@ def build_reviews_stock_message(rows: list[PlatformReviewStock], settings: Setti
     )
     lines.append("")
     lines.append(
-        blockquote(
+        _blockquote(
             "Свободно — тексты, которые пользователи могут взять сейчас. "
             "Когда остаток падает — добавляйте новые тексты в пул."
         )

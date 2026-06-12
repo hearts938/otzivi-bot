@@ -20,6 +20,11 @@ def blockquote(body: str) -> str:
     return f"<blockquote>{body}</blockquote>"
 
 
+def blockquote_rich(body: str) -> str:
+    """Цитата с HTML-разметкой (пользовательские поля — через esc_html)."""
+    return f"<blockquote>{(body or '').strip()}</blockquote>"
+
+
 def section(title: str, body: str) -> str:
     return f"<b>{esc_html(title)}</b>\n{blockquote(body)}"
 
@@ -83,12 +88,14 @@ def referral_level_percent(
 def _reviews_channel_line(url: str) -> str:
     u = (url or "").strip()
     if not u:
-        return "— (не настроен)"
+        return ""
     if u.startswith("http"):
-        return f'<a href="{u}">канал с отзывами</a>'
-    if u.startswith("@"):
-        return f'<a href="https://t.me/{u.lstrip("@")}">{u}</a>'
-    return f'<a href="https://t.me/{u}">{u}</a>'
+        safe = esc_html(u)
+        return f'<a href="{safe}">канал с отзывами</a>'
+    handle = u.lstrip("@")
+    label = esc_html(u if u.startswith("@") else f"@{u}")
+    safe_handle = esc_html(handle)
+    return f'<a href="https://t.me/{safe_handle}">{label}</a>'
 
 
 def profile_text(
@@ -101,26 +108,28 @@ def profile_text(
     percent_after: float = 5,
     count_threshold: int = 10,
 ) -> str:
-    un = f"@{u.username}" if u.username else "—"
+    un = esc_html(f"@{u.username}" if u.username else "—")
     level_pct = referral_level_percent(
         referred_count,
         percent_up_to=percent_up_to,
         percent_after=percent_after,
         count_threshold=count_threshold,
     )
-    body = (
-        f"Username в Telegram: <b>{un}</b>\n"
-        f"Баланс к выплате: <b>{u.balance:.2f}</b> ₽\n"
-        f"В ожидании: <b>{float(u.pending_balance or 0):.2f}</b> ₽\n"
-        f"Выполнено заданий: <b>{completed_tasks}</b>\n"
-        f"Общий заработок: <b>{u.total_earned:.2f}</b> ₽\n"
-        f"Реферальный уровень: <b>{level_pct:.0f}%</b>\n"
+    lines = [
+        f"Username в Telegram: <b>{un}</b>",
+        f"Баланс к выплате: <b>{u.balance:.2f}</b> ₽",
+        f"В ожидании: <b>{float(u.pending_balance or 0):.2f}</b> ₽",
+        f"Выполнено заданий: <b>{completed_tasks}</b>",
+        f"Общий заработок: <b>{u.total_earned:.2f}</b> ₽",
+        f"Реферальный уровень: <b>{level_pct:.0f}%</b>",
         f"Заработано на рефералах: <b>{u.referral_earned_total:.2f}</b> ₽ "
-        f"(уже входит в баланс)\n"
-        f"Количество рефералов: <b>{referred_count}</b>\n"
-        f"Канал с отзывами: {_reviews_channel_line(reviews_channel_url)}"
-    )
-    return f"👤 <b>Личный кабинет</b>\n\n{blockquote(body)}"
+        f"(уже входит в баланс)",
+        f"Количество рефералов: <b>{referred_count}</b>",
+    ]
+    channel = _reviews_channel_line(reviews_channel_url)
+    if channel:
+        lines.append(f"Канал с отзывами: {channel}")
+    return f"👤 <b>Личный кабинет</b>\n\n{blockquote_rich(chr(10).join(lines))}"
 
 
 def withdraw_hint_text() -> str:

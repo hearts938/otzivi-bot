@@ -21,17 +21,50 @@
 </div>
 {% endif %}
 
-<div class="upload-box" id="import-drop-zone">
-  <form method="post" action="/import" enctype="multipart/form-data" id="import-form">
-    <input type="file" name="file" id="import-file" class="upload-input-hidden" accept=".xlsx"/>
-    <div class="upload-prompt" id="import-prompt">
-      <span class="upload-title">Перетащите файл .xlsx сюда</span>
-      <span class="upload-hint">или нажмите, чтобы выбрать на диске</span>
-      <p class="upload-filename" id="import-filename" hidden></p>
-    </div>
-    <button type="submit" class="btn-primary" id="import-submit">Загрузить и импортировать</button>
-  </form>
-</div>
+<form method="post" action="/import" enctype="multipart/form-data" id="import-form">
+  <div class="upload-box">
+    <label class="upload-field-label" for="import-file">
+      <strong>Файл Excel (.xlsx)</strong>
+    </label>
+    <input
+      type="file"
+      name="file"
+      id="import-file"
+      class="upload-file-input"
+      accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+      required
+    />
+    <p id="import-filename" class="upload-filename" hidden></p>
+    <p class="upload-hint">Выберите файл, затем нажмите «Загрузить и импортировать».</p>
+  </div>
+  <button type="submit" class="btn-primary" id="import-submit">Загрузить и импортировать</button>
+</form>
+<script>
+(function () {
+  var input = document.getElementById("import-file");
+  var nameEl = document.getElementById("import-filename");
+  var form = document.getElementById("import-form");
+  var btn = document.getElementById("import-submit");
+  if (input && nameEl) {
+    input.addEventListener("change", function () {
+      var f = input.files && input.files[0];
+      if (f) {
+        nameEl.textContent = "Выбран: " + f.name;
+        nameEl.hidden = false;
+      } else {
+        nameEl.hidden = true;
+        nameEl.textContent = "";
+      }
+    });
+  }
+  if (form && btn) {
+    form.addEventListener("submit", function () {
+      btn.disabled = true;
+      btn.textContent = "Загрузка…";
+    });
+  }
+})();
+</script>
 
 <section class="help-block">
   <h2>Колонки в первой строке</h2>
@@ -47,57 +80,4 @@
     <tr><td>Дата публикации</td><td>День, с <strong>00:00</strong> ({{ timezone }}) текст станет доступен в боте</td></tr>
   </table>
 </section>
-
-<script>
-(function () {
-  var zone = document.getElementById("import-drop-zone");
-  var input = document.getElementById("import-file");
-  var prompt = document.getElementById("import-prompt");
-  var nameEl = document.getElementById("import-filename");
-  if (!zone || !input) return;
-
-  function looksXlsx(file) {
-    var n = (file.name || "").toLowerCase();
-    return n.endsWith(".xlsx") || n.endsWith(".xls");
-  }
-
-  function setFile(file) {
-    if (!file) return;
-    if (!looksXlsx(file)) {
-      alert("Нужен файл .xlsx (старый .xls не поддерживается — сохраните как «Книга Excel»).");
-      return;
-    }
-    var dt = new DataTransfer();
-    dt.items.add(file);
-    input.files = dt.files;
-    nameEl.textContent = file.name;
-    nameEl.hidden = false;
-    zone.classList.add("has-file");
-  }
-
-  prompt.addEventListener("click", function () { input.click(); });
-  input.addEventListener("change", function () {
-    if (input.files && input.files[0]) setFile(input.files[0]);
-  });
-
-  ["dragenter", "dragover"].forEach(function (ev) {
-    zone.addEventListener(ev, function (e) {
-      e.preventDefault();
-      e.stopPropagation();
-      zone.classList.add("dragover");
-    });
-  });
-  ["dragleave", "drop"].forEach(function (ev) {
-    zone.addEventListener(ev, function (e) {
-      e.preventDefault();
-      e.stopPropagation();
-      zone.classList.remove("dragover");
-    });
-  });
-  zone.addEventListener("drop", function (e) {
-    var files = e.dataTransfer && e.dataTransfer.files;
-    if (files && files.length) setFile(files[0]);
-  });
-})();
-</script>
 {% endblock %}

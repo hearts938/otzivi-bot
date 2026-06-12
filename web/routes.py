@@ -258,12 +258,13 @@ async def user_ban(request: Request, uid: int):
     return RedirectResponse(f"/users/manage/{uid}", status_code=302)
 
 
-@router.get("/import", response_class=HTMLResponse)
-async def import_get(request: Request):
-    r = _need_admin(request)
-    if r:
-        return r
-    settings: Settings = _settings(request)
+def _import_page(
+    request: Request,
+    settings: Settings,
+    *,
+    status_code: int = 200,
+    **extra,
+):
     return templates.TemplateResponse(
         "import_texts.html",
         {
@@ -272,90 +273,92 @@ async def import_get(request: Request):
             "err": None,
             "warnings": None,
             "timezone": settings.app_timezone,
+            **extra,
         },
+        status_code=status_code,
     )
 
 
+@router.get("/import", response_class=HTMLResponse)
+async def import_get(request: Request):
+    r = _need_admin(request)
+    if r:
+        return r
+    return _import_page(request, _settings(request))
+
+
 @router.post("/import", response_class=HTMLResponse)
-async def import_post(request: Request):
+async def import_post(
+    request: Request,
+    file: UploadFile | None = File(default=None),
+):
     r = _need_admin(request)
     if r:
         return r
     settings: Settings = _settings(request)
-    form = await request.form()
-    raw_file = form.get("file")
-    if not isinstance(raw_file, UploadFile) or not raw_file.filename:
-        return templates.TemplateResponse(
-            "import_texts.html",
-            {
-                "request": request,
-                "msg": None,
-                "err": "Выберите файл .xlsx",
-                "warnings": None,
-                "timezone": settings.app_timezone,
-            },
+    if file is None or not hasattr(file, "read"):
+        return _import_page(
+            request,
+            settings,
+            err="Файл не получен. Выберите .xlsx и нажмите «Загрузить и импортировать».",
             status_code=400,
         )
-    raw = await raw_file.read()
+    raw, filename, _mime = await read_upload_file(file)
     if not raw:
-        return templates.TemplateResponse(
-            "import_texts.html",
-            {
-                "request": request,
-                "msg": None,
-                "err": "Файл пустой.",
-                "warnings": None,
-                "timezone": settings.app_timezone,
-            },
+        return _import_page(request, settings, err="Файл пустой.", status_code=400)
+    if not looks_like_xlsx(filename, raw):
+        return _import_page(
+            request,
+            settings,
+            err=(
+                "Нужен файл Excel .xlsx (не старый .xls). "
+                "В Excel: «Файл → Сохранить как → Книга Excel (.xlsx)»."
+            ),
             status_code=400,
         )
-    if not looks_like_xlsx(raw_file.filename, raw):
-        return templates.TemplateResponse(
-            "import_texts.html",
-            {
-                "request": request,
-                "msg": None,
-                "err": "Нужен файл Excel .xlsx (не .xls). Сохраните книгу как «Книга Excel (.xlsx)».",
-                "warnings": None,
-                "timezone": settings.app_timezone,
-            },
+    try:
+        items, parse_errs = await asyncio.to_thread(
+            parse_review_texts_excel, raw, settings.app_timezone
+        )
+    except Exception as exc:
+        return _import_page(
+            request,
+            settings,
+            err=f"Ошибка чтения файла: {exc}",
             status_code=400,
         )
-    items, parse_errs = await asyncio.to_thread(
-        parse_review_texts_excel, raw, settings.app_timezone
-    )
     if parse_errs and not items:
-        return templates.TemplateResponse(
-            "import_texts.html",
-            {
-                "request": request,
-                "msg": None,
-                "err": "Импорт не выполнен. Исправьте ошибки в файле.",
-                "warnings": parse_errs[:30],
-                "timezone": settings.app_timezone,
-            },
+        return _import_page(
+            request,
+            settings,
+            err="Импорт не выполнен. Исправьте ошибки в файле.",
+            warnings=parse_errs[:30],
             status_code=400,
         )
-    async with _sf(request)() as session:
-        default_p = await get_default_platform(session)
-        pid_default = default_p.id if default_p else 1
-        texts_n, tasks_n, _ = await import_review_texts(session, items, pid_default)
-        activated = await activate_due_texts(session)
+    try:
+        async with _sf(request)() as session:
+            default_p = await get_default_platform(session)
+            pid_default = default_p.id if default_p else 1
+            texts_n, tasks_n, _ = await import_review_texts(session, items, pid_default)
+            activated = await activate_due_texts(session)
+    except Exception as exc:
+        return _import_page(
+            request,
+            settings,
+            err=f"Ошибка записи в базу: {exc}",
+            status_code=500,
+        )
     msg = (
         f"Готово: загружено текстов — {texts_n}, "
         f"создано новых заданий (по ссылкам) — {tasks_n}."
     )
     if activated:
         msg += f" Сразу опубликовано по расписанию: {activated}."
-    return templates.TemplateResponse(
-        "import_texts.html",
-        {
-            "request": request,
-            "msg": msg,
-            "err": None,
-            "warnings": parse_errs[:30] if parse_errs else None,
-            "timezone": settings.app_timezone,
-        },
+    return _import_page(
+        request,
+        settings,
+        msg=msg,
+        warnings=parse_errs[:30] if parse_errs else None,
     )
 
 
