@@ -332,24 +332,17 @@ async def _send_org_info(message: Message, session_factory: async_sessionmaker[A
         return
     addr = (t.org_address or "").strip() or "не указан администратором"
     reg = t.region or "любой"
-    maps_link = (t.link or "").strip()
-    maps_line = (
-        f"\n<b>Яндекс Карты:</b> {esc_html(maps_link)}"
-        if maps_link
-        else "\n<b>Яндекс Карты:</b> ссылка не задана"
-    )
-    body = (
-        f"<b>Организация:</b> {esc_html(t.customer_name or t.title)}\n"
-        f"<b>Регион:</b> {esc_html(reg)}\n"
-        f"<b>Адрес:</b> {esc_html(addr)}"
-        f"{maps_line}"
-    )
+    lines = [
+        f"<b>Организация:</b> {esc_html(t.customer_name or t.title)}",
+        f"<b>Регион:</b> {esc_html(reg)}",
+        f"<b>Адрес:</b> {esc_html(addr)}",
+    ]
     await message.answer(
-        f"🗺 <b>Задание назначено</b>\n\n{blockquote(body)}\n\n"
-        f"{blockquote('Найдите эту организацию в Яндекс Картах по ссылке выше. Нашли?')}",
+        f"🗺 <b>Задание назначено</b>\n\n"
+        f"{chr(10).join(lines)}\n\n"
+        f"Найдите эту организацию в Яндекс Картах по адресу выше. Нашли?",
         parse_mode="HTML",
         reply_markup=ym_yes_no_kb(),
-        disable_web_page_preview=False,
     )
 
 
@@ -394,8 +387,7 @@ async def ym_found(
         await save_ym_session(session, ym)
     await state.set_state(YandexMapsUserFSM.website)
     site_hint = (
-        "Пришлите ссылку на официальный сайт компании (начинается с https://). "
-        "Это не ссылка на Яндекс Карты — карты вы уже открыли на предыдущем шаге."
+        "Пришлите ссылку на официальный сайт компании (начинается с https://)."
     )
     no_site_hint = (
         "Если у организации нет сайта — пришлите ссылку на её страницу "
@@ -436,7 +428,7 @@ async def ym_website(
         return
     if len(url) < 8 or not url.startswith(("http://", "https://")):
         await message.answer(
-            "Нужна ссылка на сайт организации: начинается с https:// (не ссылка на Яндекс Карты).",
+            "Нужна ссылка на сайт организации: начинается с https://.",
             reply_markup=ym_website_kb(),
         )
         return

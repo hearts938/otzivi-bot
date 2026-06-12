@@ -41,6 +41,7 @@ from repo import (
     get_user_by_telegram,
     list_users_admin_page,
     set_user_banned,
+    user_is_banned_now,
 )
 from services.admin_stats import user_activity_bundle
 
@@ -98,7 +99,7 @@ async def _show_users_list_page(
         pages = max(1, (total + USERS_PAGE_SIZE - 1) // USERS_PAGE_SIZE)
         page = max(0, min(page, pages - 1))
         users = await list_users_admin_page(session, page * USERS_PAGE_SIZE, USERS_PAGE_SIZE)
-    labels = [user_pick_label(u.username, u.telegram_id, u.is_banned) for u in users]
+    labels = [user_pick_label(u.username, u.telegram_id, user_is_banned_now(u)) for u in users]
     await state.set_state(AdminUsersBrowse.list_pick)
     await state.update_data(users_page=page)
     await message.answer(
@@ -217,7 +218,7 @@ async def msg_user_card(
     await message.answer(
         admin_user_card_text(u, done, d_act, w_act, m_act),
         parse_mode="HTML",
-        reply_markup=admin_user_card_kb(u.is_banned),
+        reply_markup=admin_user_card_kb(user_is_banned_now(u)),
     )
 
 
@@ -240,7 +241,7 @@ async def msg_ban_toggle(
         if not u:
             await message.answer("Не найден.")
             return
-        new_b = not u.is_banned
+        new_b = not user_is_banned_now(u)
         await set_user_banned(session, int(uid), new_b)
         u = await get_user_by_id(session, int(uid))
     if u:
@@ -259,7 +260,7 @@ async def msg_ban_toggle(
         f"{'🚫 Пользователь заблокирован' if new_b else '✅ Пользователь разблокирован'}\n\n"
         f"{section('Telegram ID', str(u.telegram_id if u else '—'))}",
         parse_mode="HTML",
-        reply_markup=admin_user_card_kb(u.is_banned) if u else admin_back_home_kb(),
+        reply_markup=admin_user_card_kb(user_is_banned_now(u)) if u else admin_back_home_kb(),
     )
     if u:
         await state.update_data(view_user_id=u.id)

@@ -18,6 +18,9 @@ import asyncio
 
 from config import Settings
 from services.reviews_stock import reviews_stock_scheduler_loop
+# --- 2FA (временно отключено) ---
+# from services.web_admin_auth import ensure_password_initialized
+# from web.auth_middleware import WebAdminAuthMiddleware
 from web.routes import router as admin_web_router
 
 
@@ -41,6 +44,9 @@ def create_app(
                 default=DefaultBotProperties(parse_mode=ParseMode.HTML),
             )
             app.state._owns_bot = True
+        # async with session_factory() as session:
+        #     await ensure_password_initialized(session, settings)
+        #     await session.commit()
         asyncio.create_task(reviews_stock_scheduler_loop(app.state.bot, session_factory))
         yield
         if app.state._owns_bot:
@@ -71,6 +77,7 @@ def create_app(
             )
         return JSONResponse(status_code=422, content={"detail": exc.errors()})
 
+    # app.add_middleware(WebAdminAuthMiddleware)
     app.add_middleware(SessionMiddleware, secret_key=settings.web_session_secret, session_cookie="abot_sess")
     app.include_router(admin_web_router)
     static_dir = Path(__file__).resolve().parent / "static"

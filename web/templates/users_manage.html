@@ -3,12 +3,12 @@
 {% block body %}
 <h1>Управление пользователями</h1>
 <ul>
-  {% for u in users %}
+  {% for row in rows %}
   <li>
-    <a href="/users/manage/{{ u.id }}">
-      @{{ u.username or u.telegram_id }} — tg {{ u.telegram_id }} —
-      баланс {{ "%.2f"|format(u.balance) }} ₽ —
-      {% if u.is_banned %}забанен{% else %}активен{% endif %}
+    <a href="/users/manage/{{ row.user.id }}">
+      @{{ row.user.username or row.user.telegram_id }} — tg {{ row.user.telegram_id }} —
+      баланс {{ "%.2f"|format(row.user.balance) }} ₽ —
+      {% if row.banned %}забанен{% else %}активен{% endif %}
     </a>
   </li>
   {% endfor %}

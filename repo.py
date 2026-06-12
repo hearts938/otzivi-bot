@@ -158,6 +158,9 @@ async def set_user_banned(session: AsyncSession, user_id: int, banned: bool) -> 
     if not u:
         return False
     u.is_banned = bool(banned)
+    # Снять бан полностью: и флаг, и срок (автобан за чит на Я.Картах).
+    # Ручной бан — только is_banned, без ban_until.
+    u.ban_until = None
     await session.commit()
     return True
 

@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from config import Settings
 from handlers.admin.common import is_admin
-from handlers.formatting import blockquote, section
+from handlers.formatting import blockquote, section_rich
 from handlers.keyboards import (
     A_FINANCE,
     BTN_ADMIN_HOME,
@@ -68,7 +68,7 @@ async def msg_fin_platform(
         f"Топ-5:\n{top_lines}"
     )
     await message.answer(
-        f"💰 <b>{snap.platform.name}</b>\n\n{section('Статистика', body)}",
+        f"💰 <b>{snap.platform.name}</b>\n\n{section_rich('Статистика', body)}",
         parse_mode="HTML",
         reply_markup=_kb(_rows(BTN_BACK_FIN, BTN_ADMIN_HOME)),
     )

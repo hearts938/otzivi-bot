@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+{% block title %}Активные сессии{% endblock %}
+{% block body %}
+<h1>Активные сессии</h1>
+<p>Все входы в веб-админку по IP. Текущую сессию завершить здесь нельзя — используйте «Выход».</p>
+
+{% if msg %}<p class="alert alert-ok">{{ msg }}</p>{% endif %}
+{% if err %}<p class="alert alert-warn">{{ err }}</p>{% endif %}
+
+{% if sessions %}
+<ol>
+  {% for s in sessions %}
+  <li style="margin:0.75rem 0">
+    <strong>{{ loop.index }}</strong>
+    {% if s.id == current_sid %}
+      <em>(Ваша сессия)</em>
+    {% else %}
+      <form method="post" action="/admin/sessions/{{ s.id }}/revoke" style="display:inline">
+        <button type="submit">Завершить</button>
+      </form>
+    {% endif %}
+    <br/>
+    IP: <code>{{ s.ip }}</code><br/>
+    Браузер: {{ s.user_agent }}<br/>
+    Вход: {{ s.created_at }} · активность: {{ s.last_seen_at }}
+  </li>
+  {% endfor %}
+</ol>
+{% else %}
+<p>Нет активных сессий.</p>
+{% endif %}
+
+<p><a href="/">На главную</a></p>
+{% endblock %}

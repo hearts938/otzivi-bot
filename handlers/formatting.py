@@ -16,6 +16,7 @@ def esc_html(text: object) -> str:
 
 
 def blockquote(body: str) -> str:
+    """Цитата только для обычного текста (HTML будет экранирован)."""
     body = esc_html((body or "—").strip())
     return f"<blockquote>{body}</blockquote>"
 
@@ -26,6 +27,7 @@ def blockquote_rich(body: str) -> str:
 
 
 def section(title: str, body: str) -> str:
+    """Секция только для обычного текста в теле (HTML будет экранирован)."""
     return f"<b>{esc_html(title)}</b>\n{blockquote(body)}"
 
 

@@ -32,6 +32,12 @@ class Settings:
     referral_count_threshold: int
     referral_first_task_bonus: float
     web_admin_password: str
+    web_admin_email: str
+    smtp_host: str
+    smtp_port: int
+    smtp_user: str
+    smtp_password: str
+    smtp_from: str
     web_session_secret: str
     web_host: str
     web_port: int
@@ -70,6 +76,12 @@ def get_settings() -> Settings:
         referral_count_threshold=int(os.getenv("REFERRAL_COUNT_THRESHOLD", "10")),
         referral_first_task_bonus=float(os.getenv("REFERRAL_FIRST_TASK_BONUS", "0")),
         web_admin_password=web_pw,
+        web_admin_email=os.getenv("WEB_ADMIN_EMAIL", "").strip(),
+        smtp_host=os.getenv("SMTP_HOST", "").strip(),
+        smtp_port=int(os.getenv("SMTP_PORT", "587")),
+        smtp_user=os.getenv("SMTP_USER", "").strip(),
+        smtp_password=os.getenv("SMTP_PASSWORD", "").strip(),
+        smtp_from=os.getenv("SMTP_FROM", "").strip() or os.getenv("SMTP_USER", "").strip(),
         web_session_secret=web_secret,
         web_host=os.getenv("WEB_HOST", "0.0.0.0"),
         web_port=int(os.getenv("WEB_PORT", "8000")),

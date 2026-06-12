@@ -51,6 +51,7 @@ from repo import (
     update_task_fields,
     set_setting,
     set_user_banned,
+    user_is_banned_now,
     update_platform_cooldown,
 )
 from services.broadcast import (
@@ -73,6 +74,19 @@ from services.text_pool import build_pool_lines, parse_number_list
 from services.texts_import import looks_like_xlsx, parse_review_texts_excel
 from services.timezone_util import publish_at_midnight
 from services.admin_stats import list_platforms, platform_snapshot, user_activity_bundle
+# --- 2FA / серверные сессии (временно отключено) ---
+# from services.web_admin_auth import (
+#     admin_password_is_configured,
+#     client_ip_from_headers,
+#     create_web_admin_session,
+#     format_session_row,
+#     issue_password_change_code,
+#     list_active_web_admin_sessions,
+#     revoke_web_admin_session,
+#     set_admin_password,
+#     verify_admin_password,
+#     verify_and_consume_password_code,
+# )
 from services.yandex_maps import YANDEX_QUIZ_POOL_SIZE
 from sqlalchemy import select
 from database.models import Platform, SupportTicketStatus, User
@@ -123,7 +137,9 @@ async def login_post(request: Request):
         )
     if pw != settings.web_admin_password:
         return templates.TemplateResponse(
-            "login.html", {"request": request, "error": "Неверный пароль"}, status_code=401
+            "login.html",
+            {"request": request, "error": "Неверный пароль"},
+            status_code=401,
         )
     request.session["admin"] = True
     return RedirectResponse("/", status_code=302)
@@ -133,6 +149,19 @@ async def login_post(request: Request):
 async def logout(request: Request):
     request.session.clear()
     return RedirectResponse("/login", status_code=302)
+
+
+# --- 2FA: активные сессии и смена пароля по почте (временно отключено) ---
+# @router.get("/admin/sessions", response_class=HTMLResponse)
+# async def admin_sessions_get(request: Request): ...
+# @router.post("/admin/sessions/{sid}/revoke")
+# async def admin_sessions_revoke(request: Request, sid: str): ...
+# @router.get("/admin/password", response_class=HTMLResponse)
+# async def admin_password_get(request: Request): ...
+# @router.post("/admin/password/send-code")
+# async def admin_password_send_code(request: Request): ...
+# @router.post("/admin/password/change")
+# async def admin_password_change(request: Request): ...
 
 
 @router.get("/", response_class=HTMLResponse)
@@ -169,7 +198,11 @@ async def users_manage(request: Request):
         return r
     async with _sf(request)() as session:
         users = await list_users_admin(session, limit=300)
-    return templates.TemplateResponse("users_manage.html", {"request": request, "users": users})
+    rows = [
+        {"user": u, "banned": user_is_banned_now(u)}
+        for u in users
+    ]
+    return templates.TemplateResponse("users_manage.html", {"request": request, "rows": rows})
 
 
 @router.get("/users/manage/{uid}", response_class=HTMLResponse)
@@ -187,10 +220,12 @@ async def user_detail(request: Request, uid: int):
         d_act, w_act, m_act = await user_activity_bundle(session, u.id)
         name = " ".join(x for x in [u.first_name or "", u.last_name or ""] if x).strip() or "—"
         un = f"@{u.username}" if u.username else "—"
-        act = "заблокирован" if u.is_banned else "активен"
+        banned = user_is_banned_now(u)
+        act = "заблокирован" if banned else "активен"
         balance = float(u.balance or 0)
         pending_balance = float(u.pending_balance or 0)
-        banned = bool(u.is_banned)
+        if u.ban_until and banned:
+            act += f" (до {u.ban_until:%d.%m.%Y %H:%M} UTC)"
         text = (
             f"tg id: {u.telegram_id}\n"
             f"username: {un}\n"
@@ -259,7 +294,7 @@ async def user_ban(request: Request, uid: int):
         u = await get_user_by_id(session, uid)
         if not u:
             return RedirectResponse("/users/manage", status_code=302)
-        await set_user_banned(session, uid, not u.is_banned)
+        await set_user_banned(session, uid, not user_is_banned_now(u))
     return RedirectResponse(f"/users/manage/{uid}", status_code=302)
 
 
