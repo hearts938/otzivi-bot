@@ -1381,7 +1381,7 @@ async def tasks_add(request: Request):
     return RedirectResponse(f"/tasks/{t.id}", status_code=302)
 
 
-def _pool_view(task, lines):
+def _pool_view(lines):
     active, waiting, retired, taken = [], [], [], []
     for ln in lines:
         row = {
@@ -1401,6 +1401,36 @@ def _pool_view(task, lines):
     return active, waiting, retired, taken
 
 
+POOL_PAGE_SIZE = 8
+POOL_PREVIEW_SIZE = 3
+
+_POOL_SECTIONS: tuple[tuple[str, str], ...] = (
+    ("active", "Активные (ещё не взяты)"),
+    ("waiting", "Ожидают публикации"),
+    ("retired", "Сняты с пула"),
+    ("taken", "Уже взяты"),
+)
+
+
+def _pool_flat_list(lines) -> list[dict]:
+    groups = dict(zip(("active", "waiting", "retired", "taken"), _pool_view(lines)))
+    out: list[dict] = []
+    for key, title in _POOL_SECTIONS:
+        for row in groups.get(key, []):
+            out.append({**row, "section": key, "section_title": title})
+    return out
+
+
+def _paginate_pool(items: list, page: int, *, per_page: int = POOL_PAGE_SIZE):
+    total = len(items)
+    if total == 0:
+        return [], 1, 1, 0
+    pages = max(1, (total + per_page - 1) // per_page)
+    page = max(1, min(page, pages))
+    start = (page - 1) * per_page
+    return items[start : start + per_page], page, pages, total
+
+
 @router.get("/tasks/{tid}", response_class=HTMLResponse)
 async def task_detail(request: Request, tid: int):
     r = _need_admin(request)
@@ -1411,18 +1441,24 @@ async def task_detail(request: Request, tid: int):
         t = await get_task(session, tid)
     if not t:
         return HTMLResponse("Нет", status_code=404)
-    lines = build_pool_lines(t.texts or [], tz_name=settings.app_timezone)
-    active, waiting, retired, taken = _pool_view(t, lines)
     qp = request.query_params
+    lines = build_pool_lines(t.texts or [], tz_name=settings.app_timezone)
+    flat = _pool_flat_list(lines)
+    try:
+        pool_page = max(1, int(qp.get("page") or 1))
+    except ValueError:
+        pool_page = 1
+    pool_items, pool_page, pool_pages, pool_total = _paginate_pool(flat, pool_page)
     return templates.TemplateResponse(
         "task_detail.html",
         {
             "request": request,
             "task": t,
-            "active": active,
-            "waiting": waiting,
-            "retired": retired,
-            "taken": taken,
+            "pool_items": pool_items,
+            "pool_page": pool_page,
+            "pool_pages": pool_pages,
+            "pool_total": pool_total,
+            "pool_preview": POOL_PREVIEW_SIZE,
             "msg": qp.get("msg"),
             "err": qp.get("err"),
         },

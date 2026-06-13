@@ -29,40 +29,51 @@
 {% if err %}<div class="alert alert-err">{{ err }}</div>{% endif %}
 
 <h2>Пул текстов</h2>
-<h3>Активные (ещё не взяты)</h3>
-{% if active %}
-<ol>
-  {% for ln in active %}
-  <li><b>{{ ln.number }}.</b> [{{ ln.gender_label }}] {{ ln.preview }} — <em>{{ ln.status_label }}</em></li>
-  {% endfor %}
-</ol>
-{% else %}<p>— нет —</p>{% endif %}
+{% if pool_total == 0 %}
+<p>— нет —</p>
+{% else %}
+<p class="pool-meta">Всего текстов: <b>{{ pool_total }}</b>{% if pool_pages > 1 %}, страница <b>{{ pool_page }}</b> из <b>{{ pool_pages }}</b>{% endif %}</p>
 
-<h3>Ожидают публикации</h3>
-{% if waiting %}
-<ol>
-  {% for ln in waiting %}
-  <li><b>{{ ln.number }}.</b> [{{ ln.gender_label }}] {{ ln.preview }} — <em>{{ ln.status_label }}</em></li>
+<div id="pool-list">
+  {% set prev_section = namespace(value='') %}
+  {% set ol_open = namespace(value=false) %}
+  {% for ln in pool_items %}
+    {% if ln.section_title != prev_section.value %}
+      {% if ol_open.value %}</ol>{% endif %}
+      <h3>{{ ln.section_title }}</h3>
+      <ol class="pool-section-list">
+      {% set prev_section.value = ln.section_title %}
+      {% set ol_open.value = true %}
+    {% endif %}
+    <li class="pool-item{% if loop.index0 >= pool_preview %} pool-item-hidden{% endif %}">
+      <b>{{ ln.number }}.</b> [{{ ln.gender_label }}] {{ ln.preview }}
+      {% if ln.section == 'taken' %}— {{ ln.status_label }}{% else %}— <em>{{ ln.status_label }}</em>{% endif %}
+    </li>
   {% endfor %}
-</ol>
-{% else %}<p>— нет —</p>{% endif %}
+  {% if ol_open.value %}</ol>{% endif %}
+</div>
 
-{% if retired %}
-<h3>Сняты с пула</h3>
-<ol>
-  {% for ln in retired %}
-  <li><b>{{ ln.number }}.</b> [{{ ln.gender_label }}] {{ ln.preview }} — <em>{{ ln.status_label }}</em></li>
-  {% endfor %}
-</ol>
+{% if pool_items|length > pool_preview %}
+<button type="button" class="btn-secondary pool-show-more" id="pool-show-more">Посмотреть больше</button>
 {% endif %}
 
-{% if taken %}
-<h3>Уже взяты</h3>
-<ol>
-  {% for ln in taken %}
-  <li><b>{{ ln.number }}.</b> [{{ ln.gender_label }}] {{ ln.preview }} — {{ ln.status_label }}</li>
+{% if pool_pages > 1 %}
+<nav class="pool-pagination" aria-label="Страницы пула текстов">
+  {% if pool_page > 1 %}
+  <a href="/tasks/{{ task.id }}?page={{ pool_page - 1 }}">← Назад</a>
+  {% endif %}
+  {% for p in range(1, pool_pages + 1) %}
+    {% if p == pool_page %}
+  <span class="pool-page-current">{{ p }}</span>
+    {% else %}
+  <a href="/tasks/{{ task.id }}?page={{ p }}">{{ p }}</a>
+    {% endif %}
   {% endfor %}
-</ol>
+  {% if pool_page < pool_pages %}
+  <a href="/tasks/{{ task.id }}?page={{ pool_page + 1 }}">Вперёд →</a>
+  {% endif %}
+</nav>
+{% endif %}
 {% endif %}
 
 <h3>Добавить текст в пул</h3>
@@ -88,4 +99,17 @@
   <button type="submit">Удалить заказчика</button>
 </form>
 <p><a href="/tasks">Назад</a> · <a href="/import">Импорт Excel</a></p>
+
+<script>
+(function () {
+  var btn = document.getElementById('pool-show-more');
+  if (!btn) return;
+  btn.addEventListener('click', function () {
+    document.querySelectorAll('.pool-item-hidden').forEach(function (el) {
+      el.classList.remove('pool-item-hidden');
+    });
+    btn.style.display = 'none';
+  });
+})();
+</script>
 {% endblock %}
