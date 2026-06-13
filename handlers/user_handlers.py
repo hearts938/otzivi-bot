@@ -199,9 +199,18 @@ async def _complete_withdrawal(
     data = await state.get_data()
     amount = float(data.get("withdraw_amount") or 0)
     phone = str(data.get("withdraw_fps_phone") or "")
+    min_amount = float(settings.min_withdrawal_amount)
     if amount <= 0 or not phone:
         await state.clear()
         await message.answer("Сессия вывода сброшена. Начните снова.", reply_markup=user_profile_kb())
+        return
+    if amount < min_amount:
+        await state.clear()
+        await message.answer(
+            f"Минимальная сумма вывода — <b>{min_amount:.2f} ₽</b>. Начните снова.",
+            parse_mode="HTML",
+            reply_markup=user_profile_kb(),
+        )
         return
     await message.answer("Создаю заявку и списываю баланс, подождите...")
     request_id: int | None = None
@@ -224,11 +233,12 @@ async def _complete_withdrawal(
             amount=amount,
             fps_phone=phone,
             fps_bank_member_id=bank_id,
+            min_amount=min_amount,
         )
         if created is None:
             await state.clear()
             await message.answer(
-                "Недостаточно средств на балансе к выплате.",
+                "Не удалось создать заявку: проверьте баланс и минимальную сумму вывода.",
                 reply_markup=user_profile_kb(),
             )
             return
@@ -758,9 +768,13 @@ async def msg_withdraw_start(
             reply_markup=user_profile_kb(),
         )
         return
-    if float(u.balance or 0) <= 0:
+    balance = float(u.balance or 0)
+    min_amount = float(settings.min_withdrawal_amount)
+    if balance < min_amount:
         await message.answer(
-            "Недостаточно средств на балансе к выплате.",
+            f"Минимальная сумма вывода — <b>{min_amount:.2f} ₽</b>.\n"
+            f"На балансе к выплате: <b>{balance:.2f} ₽</b>.",
+            parse_mode="HTML",
             reply_markup=user_profile_kb(),
         )
         return
@@ -774,7 +788,8 @@ async def msg_withdraw_start(
     await state.set_state(WithdrawFSM.amount)
     await message.answer(
         f"💸 <b>Вывод средств</b>\n\n"
-        f"Доступно к выплате: <b>{float(u.balance or 0):.2f} ₽</b>\n\n"
+        f"Доступно к выплате: <b>{balance:.2f} ₽</b>\n"
+        f"Минимальная сумма: <b>{min_amount:.2f} ₽</b>\n\n"
         f"{blockquote('Введите сумму вывода в рублях, например 500 или 1250.50.')}"
         f"{hist}",
         parse_mode="HTML",
@@ -786,6 +801,7 @@ async def msg_withdraw_start(
 async def msg_withdraw_amount(
     message: Message,
     session_factory: async_sessionmaker[AsyncSession],
+    settings: Settings,
     state: FSMContext,
 ):
     raw = (message.text or "").strip().replace(",", ".")
@@ -798,6 +814,14 @@ async def msg_withdraw_amount(
         return
     if amount <= 0:
         await message.answer("Сумма должна быть больше нуля.", reply_markup=user_back_menu_kb())
+        return
+    min_amount = float(settings.min_withdrawal_amount)
+    if amount < min_amount:
+        await message.answer(
+            f"Минимальная сумма вывода — <b>{min_amount:.2f} ₽</b>.",
+            parse_mode="HTML",
+            reply_markup=user_back_menu_kb(),
+        )
         return
     async with session_factory() as session:
         u = await ensure_user(

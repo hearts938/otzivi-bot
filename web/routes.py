@@ -76,19 +76,18 @@ from services.text_pool import build_pool_lines, parse_number_list
 from services.texts_import import looks_like_xlsx, parse_review_texts_excel
 from services.timezone_util import publish_at_midnight
 from services.admin_stats import list_platforms, platform_snapshot, user_activity_bundle
-# --- 2FA / серверные сессии (временно отключено) ---
-# from services.web_admin_auth import (
-#     admin_password_is_configured,
-#     client_ip_from_headers,
-#     create_web_admin_session,
-#     format_session_row,
-#     issue_password_change_code,
-#     list_active_web_admin_sessions,
-#     revoke_web_admin_session,
-#     set_admin_password,
-#     verify_admin_password,
-#     verify_and_consume_password_code,
-# )
+from services.web_admin_auth import (
+    admin_password_is_configured,
+    client_ip_from_headers,
+    create_web_admin_session,
+    format_session_row,
+    issue_password_change_code,
+    list_active_web_admin_sessions,
+    revoke_web_admin_session,
+    set_admin_password,
+    verify_admin_password,
+    verify_and_consume_password_code,
+)
 from services.yandex_maps import YANDEX_QUIZ_POOL_SIZE
 from sqlalchemy import select
 from database.models import Platform, SupportTicketStatus, User
@@ -131,39 +130,156 @@ async def login_post(request: Request):
     form = await request.form()
     pw = (form.get("password") or "").strip()
     settings = _settings(request)
-    if not settings.web_admin_password:
-        return templates.TemplateResponse(
-            "login.html",
-            {"request": request, "error": "WEB_ADMIN_PASSWORD не задан в .env"},
-            status_code=400,
+    async with _sf(request)() as session:
+        if not await admin_password_is_configured(session, settings):
+            return templates.TemplateResponse(
+                "login.html",
+                {"request": request, "error": "WEB_ADMIN_PASSWORD не задан в .env"},
+                status_code=400,
+            )
+        if not await verify_admin_password(session, settings, pw):
+            return templates.TemplateResponse(
+                "login.html",
+                {"request": request, "error": "Неверный пароль"},
+                status_code=401,
+            )
+        ip = client_ip_from_headers(
+            forwarded_for=request.headers.get("x-forwarded-for"),
+            client_host=request.client.host if request.client else None,
         )
-    if pw != settings.web_admin_password:
-        return templates.TemplateResponse(
-            "login.html",
-            {"request": request, "error": "Неверный пароль"},
-            status_code=401,
+        row = await create_web_admin_session(
+            session,
+            ip_address=ip,
+            user_agent=request.headers.get("user-agent"),
         )
     request.session["admin"] = True
+    request.session["admin_sid"] = row.id
     return RedirectResponse("/", status_code=302)
 
 
 @router.get("/logout")
 async def logout(request: Request):
+    sid = request.session.get("admin_sid")
+    if sid:
+        async with _sf(request)() as session:
+            await revoke_web_admin_session(session, str(sid))
     request.session.clear()
     return RedirectResponse("/login", status_code=302)
 
 
-# --- 2FA: активные сессии и смена пароля по почте (временно отключено) ---
-# @router.get("/admin/sessions", response_class=HTMLResponse)
-# async def admin_sessions_get(request: Request): ...
-# @router.post("/admin/sessions/{sid}/revoke")
-# async def admin_sessions_revoke(request: Request, sid: str): ...
-# @router.get("/admin/password", response_class=HTMLResponse)
-# async def admin_password_get(request: Request): ...
-# @router.post("/admin/password/send-code")
-# async def admin_password_send_code(request: Request): ...
-# @router.post("/admin/password/change")
-# async def admin_password_change(request: Request): ...
+@router.get("/admin/sessions", response_class=HTMLResponse)
+async def admin_sessions_get(request: Request):
+    r = _need_admin(request)
+    if r:
+        return r
+    settings = _settings(request)
+    qp = request.query_params
+    async with _sf(request)() as session:
+        rows = await list_active_web_admin_sessions(session)
+        sessions = [format_session_row(x, settings.app_timezone) for x in rows]
+    return templates.TemplateResponse(
+        "admin_sessions.html",
+        {
+            "request": request,
+            "sessions": sessions,
+            "current_sid": request.session.get("admin_sid"),
+            "msg": qp.get("msg"),
+            "err": qp.get("err"),
+        },
+    )
+
+
+@router.post("/admin/sessions/{sid}/revoke")
+async def admin_sessions_revoke(request: Request, sid: str):
+    r = _need_admin(request)
+    if r:
+        return r
+    if sid == request.session.get("admin_sid"):
+        return RedirectResponse(
+            f"/admin/sessions?err={quote('Свою сессию завершите через «Выход»')}",
+            status_code=303,
+        )
+    async with _sf(request)() as session:
+        ok = await revoke_web_admin_session(session, sid)
+    if not ok:
+        return RedirectResponse(
+            f"/admin/sessions?err={quote('Сессия не найдена')}",
+            status_code=303,
+        )
+    return RedirectResponse(
+        f"/admin/sessions?msg={quote('Сессия завершена')}",
+        status_code=303,
+    )
+
+
+@router.get("/admin/password", response_class=HTMLResponse)
+async def admin_password_get(request: Request):
+    r = _need_admin(request)
+    if r:
+        return r
+    settings = _settings(request)
+    qp = request.query_params
+    return templates.TemplateResponse(
+        "change_password.html",
+        {
+            "request": request,
+            "admin_email": settings.web_admin_email or "—",
+            "msg": qp.get("msg"),
+            "err": qp.get("err"),
+        },
+    )
+
+
+@router.post("/admin/password/send-code")
+async def admin_password_send_code(request: Request):
+    r = _need_admin(request)
+    if r:
+        return r
+    settings = _settings(request)
+    try:
+        async with _sf(request)() as session:
+            await issue_password_change_code(session, settings)
+    except Exception as exc:
+        return RedirectResponse(
+            f"/admin/password?err={quote(str(exc))}",
+            status_code=303,
+        )
+    return RedirectResponse(
+        f"/admin/password?msg={quote('Код отправлен на почту')}",
+        status_code=303,
+    )
+
+
+@router.post("/admin/password/change")
+async def admin_password_change(request: Request):
+    r = _need_admin(request)
+    if r:
+        return r
+    form = await request.form()
+    code = (form.get("code") or "").strip()
+    password = (form.get("password") or "").strip()
+    password2 = (form.get("password2") or "").strip()
+    if len(password) < 8:
+        return RedirectResponse(
+            f"/admin/password?err={quote('Пароль не короче 8 символов')}",
+            status_code=303,
+        )
+    if password != password2:
+        return RedirectResponse(
+            f"/admin/password?err={quote('Пароли не совпадают')}",
+            status_code=303,
+        )
+    async with _sf(request)() as session:
+        if not await verify_and_consume_password_code(session, code):
+            return RedirectResponse(
+                f"/admin/password?err={quote('Неверный или просроченный код')}",
+                status_code=303,
+            )
+        await set_admin_password(session, password)
+    return RedirectResponse(
+        f"/admin/password?msg={quote('Пароль изменён')}",
+        status_code=303,
+    )
 
 
 @router.get("/", response_class=HTMLResponse)

@@ -234,10 +234,11 @@ async def create_withdrawal_and_debit(
     amount: float,
     fps_phone: str | None,
     fps_bank_member_id: str | None,
+    min_amount: float = 0.0,
 ) -> tuple[WithdrawalRequest, User] | None:
     """Атомарно: создать заявку на вывод и списать баланс пользователя."""
     amt = max(0.0, float(amount))
-    if amt <= 0:
+    if amt <= 0 or amt < max(0.0, float(min_amount)):
         return None
     u = await session.get(User, user_id, with_for_update=True)
     if not u:

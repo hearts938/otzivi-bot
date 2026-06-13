@@ -35,19 +35,19 @@
 <p class="pool-meta">Всего текстов: <b>{{ pool_total }}</b></p>
 {% endif %}
 
-{% macro pool_section(title, items, total, page, pages, param, section_id, italic_status=true) %}
+{% macro pool_section(title, items, total, page, pages, param, section_id, preview, italic_status=true) %}
 <div class="pool-section">
   <h3>{{ title }}{% if total > 0 %} <span class="pool-section-count">({{ total }})</span>{% endif %}</h3>
   {% if items %}
-  <ol class="pool-section-list" id="pool-{{ section_id }}" data-preview="{{ pool_preview }}">
+  <ol class="pool-section-list" id="pool-{{ section_id }}" data-preview="{{ preview }}">
     {% for ln in items %}
-    <li class="pool-item{% if loop.index0 >= pool_preview %} pool-item-hidden{% endif %}">
+    <li class="pool-item"{% if loop.index0 >= preview %} hidden{% endif %}>
       <b>{{ ln.number }}.</b> [{{ ln.gender_label }}] {{ ln.preview }}
       {% if italic_status %}— <em>{{ ln.status_label }}</em>{% else %}— {{ ln.status_label }}{% endif %}
     </li>
     {% endfor %}
   </ol>
-  {% if items|length > pool_preview %}
+  {% if items|length > preview %}
   <div class="pool-section-actions">
     <button type="button" class="btn-secondary pool-show-more" data-target="pool-{{ section_id }}">Посмотреть больше</button>
     <button type="button" class="btn-secondary pool-show-less" data-target="pool-{{ section_id }}" hidden>Скрыть</button>
@@ -76,11 +76,11 @@
 </div>
 {% endmacro %}
 
-{{ pool_section("Активные (ещё не взяты)", active_items, active_total, active_page, active_pages, "ap", "active") }}
-{{ pool_section("Ожидают публикации", waiting_items, waiting_total, waiting_page, waiting_pages, "wp", "waiting") }}
-{{ pool_section("Сняты с пула", retired_items, retired_total, retired_page, retired_pages, "rp", "retired") }}
+{{ pool_section("Активные (ещё не взяты)", active_items, active_total, active_page, active_pages, "ap", "active", pool_preview) }}
+{{ pool_section("Ожидают публикации", waiting_items, waiting_total, waiting_page, waiting_pages, "wp", "waiting", pool_preview) }}
+{{ pool_section("Сняты с пула", retired_items, retired_total, retired_page, retired_pages, "rp", "retired", pool_preview) }}
 {% if taken_total > 0 %}
-{{ pool_section("Уже взяты", taken_items, taken_total, taken_page, taken_pages, "tp", "taken", false) }}
+{{ pool_section("Уже взяты", taken_items, taken_total, taken_page, taken_pages, "tp", "taken", pool_preview, false) }}
 {% endif %}
 
 <h3>Добавить текст в пул</h3>
@@ -119,8 +119,9 @@
     btn.addEventListener('click', function () {
       var ctx = sectionFor(btn);
       if (!ctx) return;
-      ctx.list.querySelectorAll('.pool-item-hidden').forEach(function (el) {
-        el.classList.remove('pool-item-hidden');
+      var preview = parseInt(ctx.list.getAttribute('data-preview') || '3', 10);
+      ctx.list.querySelectorAll('.pool-item').forEach(function (el, i) {
+        if (i >= preview) el.hidden = false;
       });
       btn.hidden = true;
       var less = ctx.section.querySelector('.pool-show-less');
@@ -134,7 +135,7 @@
       if (!ctx) return;
       var preview = parseInt(ctx.list.getAttribute('data-preview') || '3', 10);
       ctx.list.querySelectorAll('.pool-item').forEach(function (el, i) {
-        if (i >= preview) el.classList.add('pool-item-hidden');
+        if (i >= preview) el.hidden = true;
       });
       btn.hidden = true;
       var more = ctx.section.querySelector('.pool-show-more');
