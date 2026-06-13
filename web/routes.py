@@ -1454,6 +1454,7 @@ async def task_detail(request: Request, tid: int):
     waiting_items, waiting_page, waiting_pages, waiting_total = _paginate_list(waiting, wp)
     retired_items, retired_page, retired_pages, retired_total = _paginate_list(retired, rp)
     taken_items, taken_page, taken_pages, taken_total = _paginate_list(taken, tp)
+    pool_total = active_total + waiting_total + retired_total + taken_total
     page_state = {"ap": ap, "wp": wp, "rp": rp, "tp": tp}
     return templates.TemplateResponse(
         "task_detail.html",
