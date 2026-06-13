@@ -43,6 +43,7 @@ class User(Base):
     onboarding_completed: Mapped[bool] = mapped_column(Boolean, default=False)
     gender: Mapped[str | None] = mapped_column(String(16), nullable=True)
     platform_account_name: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    yandex_quiz_speed_warned: Mapped[bool] = mapped_column(Boolean, default=False)
     last_activity_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 

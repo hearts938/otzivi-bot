@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+{% block title %}Подтверждённые отзывы{% endblock %}
+{% block body %}
+<h1>Подтверждённые отзывы</h1>
+<p>Отзывы, одобренные администратором. Время: {{ timezone }}.</p>
+{% if err %}<p class="alert alert-err">{{ err }}</p>{% endif %}
+
+<h2>Статистика</h2>
+<ul>
+  <li>Всего: <strong>{{ stats.total }}</strong></li>
+  <li>Сегодня: <strong>{{ stats.today }}</strong></li>
+  <li>За 7 дней: <strong>{{ stats.last_7_days }}</strong></li>
+  <li>За 30 дней: <strong>{{ stats.last_30_days }}</strong></li>
+</ul>
+
+<h2>Выгрузка Excel</h2>
+<p>Колонки: дата одобрения, город, пол, текст, ссылка (+ заказчик, сервис, username).</p>
+<form method="get" action="/approved-reviews/export">
+  <div>
+    <label>С даты <input name="date_from" value="{{ date_from }}" placeholder="01.03.2026" required/></label>
+  </div>
+  <div>
+    <label>По дату <input name="date_to" value="{{ date_to }}" placeholder="31.03.2026" required/></label>
+  </div>
+  <button type="submit">Скачать .xlsx</button>
+</form>
+
+<h2>Последние 20</h2>
+{% if preview %}
+<table border="1" cellpadding="6" cellspacing="0" style="border-collapse:collapse;width:100%">
+  <tr>
+    <th>#</th><th>Дата</th><th>Город</th><th>Пол</th><th>Ссылка</th><th>Текст</th>
+  </tr>
+  {% for row in preview %}
+  <tr>
+    <td>{{ row.id }}</td>
+    <td>{{ row.approved_at }}</td>
+    <td>{{ row.city }}</td>
+    <td>{{ row.gender }}</td>
+    <td>{% if row.link != "—" %}<a href="{{ row.link }}" target="_blank" rel="noopener">открыть</a>{% else %}—{% endif %}</td>
+    <td>{{ row.text_preview }}</td>
+  </tr>
+  {% endfor %}
+</table>
+{% else %}
+<p>Подтверждённых отзывов пока нет.</p>
+{% endif %}
+
+<p><a href="/">← На главную</a></p>
+{% endblock %}

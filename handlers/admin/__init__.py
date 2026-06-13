@@ -1,6 +1,7 @@
 from aiogram import Router
 
 from handlers.admin import (
+    approved_reviews,
     broadcast,
     broadcast_external,
     finance,
@@ -24,6 +25,7 @@ router.include_router(payouts.router)
 router.include_router(panel.router)
 router.include_router(moderation.router)
 router.include_router(review.router)
+router.include_router(approved_reviews.router)
 router.include_router(reviews_stock.router)
 router.include_router(users.router)
 router.include_router(broadcast.router)

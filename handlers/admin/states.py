@@ -81,6 +81,11 @@ class AdminPayoutsBrowse(StatesGroup):
     search_user = State()
 
 
+class AdminApprovedExportFSM(StatesGroup):
+    date_from = State()
+    date_to = State()
+
+
 class YandexQuizFSM(StatesGroup):
     edit_slot = State()
     edit_body = State()

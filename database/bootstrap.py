@@ -44,6 +44,7 @@ def _sqlite_add_columns(connection) -> None:
         add("users", "pending_balance", "FLOAT DEFAULT 0")
         add("users", "ban_until", "DATETIME")
         add("users", "work_region", "VARCHAR(255)")
+        add("users", "yandex_quiz_speed_warned", "BOOLEAN DEFAULT 0")
     if "tasks" in names:
         add("tasks", "org_address", "VARCHAR(1024)")
         add("tasks", "region", "VARCHAR(255)")

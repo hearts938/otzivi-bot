@@ -8,7 +8,7 @@ from aiogram.types import Message
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from config import Settings
-from database.models import Platform, SubmissionStatus, TaskText
+from database.models import Platform, SubmissionStatus, TaskText, User
 from handlers.filters import OnboardingCompletedFilter
 from handlers.formatting import blockquote, esc_html, section
 from handlers.keyboards import (
@@ -314,16 +314,36 @@ async def _handle_quiz_cheat(
     min_seconds: int,
     ban_days: int,
 ) -> None:
+    warned = False
     async with session_factory() as session:
         if ym and ym.task_text_id:
             await release_task_text(session, user_id, int(ym.task_text_id))
-        await ban_user_for_days(session, user_id, ban_days)
+        u = await session.get(User, user_id, with_for_update=True)
+        if u and not u.yandex_quiz_speed_warned:
+            u.yandex_quiz_speed_warned = True
+            await session.commit()
+            warned = True
+        elif u:
+            await ban_user_for_days(session, user_id, ban_days)
         await clear_ym_session(session, user_id)
     await state.clear()
+    if warned:
+        await message.answer(
+            f"⚠️ <b>Слишком быстрый ответ</b>\n\n"
+            f"{blockquote(
+                f'Между показом вопроса и ответом должно пройти не менее {min_seconds} с. '
+                f'Это предупреждение — задание снято. При повторении аккаунт будет '
+                f'заблокирован на {ban_days} дн.'
+            )}",
+            parse_mode="HTML",
+            reply_markup=user_main_kb(),
+        )
+        return
     await message.answer(
         f"⛔ <b>Слишком быстрый ответ</b>\n\n"
-        f"{blockquote(f'Между показом вопроса и ответом должно пройти не менее {min_seconds} с. '
-                       f'Аккаунт заблокирован на {ban_days} дн.')}",
+        f"{blockquote(
+            f'Вы уже получали предупреждение. Аккаунт заблокирован на {ban_days} дн.'
+        )}",
         parse_mode="HTML",
         reply_markup=user_main_kb(),
     )
@@ -459,8 +479,9 @@ async def ym_website(
     await message.answer(
         f"🗺 <b>Контрольные вопросы</b>\n\n"
         f"{blockquote('Ответьте «Да» или «Нет» на каждый вопрос. Правильность не проверяется. '
-                       f'Между показом вопроса и ответом — не менее {settings.yandex_answer_min_seconds} с, '
-                       f'иначе блокировка на {settings.yandex_cheat_ban_days} дн.')}",
+                       f'Между показом вопроса и ответом — не менее {settings.yandex_answer_min_seconds} с. '
+                       f'Первое нарушение — предупреждение, повторное — блокировка на '
+                       f'{settings.yandex_cheat_ban_days} дн.')}",
         parse_mode="HTML",
         reply_markup=ym_quiz_intro_kb(),
     )

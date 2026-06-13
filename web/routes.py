@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import asyncio
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from urllib.parse import quote
 
@@ -10,7 +10,7 @@ import pandas as pd
 from aiogram.exceptions import TelegramBadRequest, TelegramForbiddenError
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 from fastapi import APIRouter, File, Form, Request, UploadFile
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -76,6 +76,13 @@ from services.text_pool import build_pool_lines, parse_number_list
 from services.texts_import import looks_like_xlsx, parse_review_texts_excel
 from services.timezone_util import publish_at_midnight
 from services.admin_stats import list_platforms, platform_snapshot, user_activity_bundle
+from services.approved_reviews import (
+    build_approved_reviews_xlsx,
+    fetch_approved_review_stats,
+    list_approved_reviews,
+    parse_admin_date,
+    utc_now_in_tz,
+)
 from services.web_admin_auth import (
     admin_password_is_configured,
     client_ip_from_headers,
@@ -972,6 +979,81 @@ async def review_reject(request: Request, submission_id: int):
     return RedirectResponse(
         f"/review/platform/{platform_id}?msg={quote('Отклонено')}",
         status_code=303,
+    )
+
+
+@router.get("/approved-reviews", response_class=HTMLResponse)
+async def approved_reviews_get(request: Request):
+    r = _need_admin(request)
+    if r:
+        return r
+    settings = _settings(request)
+    qp = request.query_params
+    today = utc_now_in_tz(settings.app_timezone).date()
+    default_from = (today - timedelta(days=29)).strftime("%d.%m.%Y")
+    default_to = today.strftime("%d.%m.%Y")
+    async with _sf(request)() as session:
+        stats = await fetch_approved_review_stats(session, tz_name=settings.app_timezone)
+        preview = await list_approved_reviews(
+            session, tz_name=settings.app_timezone, limit=20
+        )
+    preview_rows = [
+        {
+            "id": row.id,
+            "approved_at": row.approved_at.strftime("%d.%m.%Y %H:%M") if row.approved_at else "—",
+            "city": row.city,
+            "gender": row.gender,
+            "link": row.link,
+            "text_preview": (row.text[:120] + "…") if len(row.text) > 120 else row.text,
+        }
+        for row in preview
+    ]
+    return templates.TemplateResponse(
+        "approved_reviews.html",
+        {
+            "request": request,
+            "stats": stats,
+            "preview": preview_rows,
+            "timezone": settings.app_timezone,
+            "date_from": qp.get("date_from") or default_from,
+            "date_to": qp.get("date_to") or default_to,
+            "err": qp.get("err"),
+        },
+    )
+
+
+@router.get("/approved-reviews/export")
+async def approved_reviews_export(request: Request):
+    r = _need_admin(request)
+    if r:
+        return r
+    settings = _settings(request)
+    qp = request.query_params
+    d_from = parse_admin_date(qp.get("date_from") or "")
+    d_to = parse_admin_date(qp.get("date_to") or "")
+    if not d_from or not d_to:
+        return RedirectResponse(
+            "/approved-reviews?err=" + quote("Укажите даты в формате ДД.ММ.ГГГГ"),
+            status_code=303,
+        )
+    async with _sf(request)() as session:
+        rows = await list_approved_reviews(
+            session,
+            date_from=d_from,
+            date_to=d_to,
+            tz_name=settings.app_timezone,
+        )
+    if not rows:
+        return RedirectResponse(
+            "/approved-reviews?err=" + quote("За выбранный период отзывов нет"),
+            status_code=303,
+        )
+    xlsx = build_approved_reviews_xlsx(rows, tz_name=settings.app_timezone)
+    fname = f"approved_{d_from.strftime('%Y%m%d')}_{d_to.strftime('%Y%m%d')}.xlsx"
+    return Response(
+        content=xlsx,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="{fname}"'},
     )
 
 

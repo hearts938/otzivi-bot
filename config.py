@@ -106,7 +106,7 @@ def get_settings() -> Settings:
         reviews_channel_url=os.getenv("REVIEWS_CHANNEL_URL", "").strip(),
         yandex_quiz_freeze_minutes=_yandex_quiz_freeze_minutes(),
         yandex_answer_min_seconds=int(os.getenv("YANDEX_ANSWER_MIN_SECONDS", "5")),
-        yandex_cheat_ban_days=int(os.getenv("YANDEX_CHEAT_BAN_DAYS", "7")),
+        yandex_cheat_ban_days=int(os.getenv("YANDEX_CHEAT_BAN_DAYS", "1")),
         payments_api_base_url=os.getenv("PAYMENTS_API_BASE_URL", "https://api-payments.konsol.pro").strip(),
         payments_api_auth=_normalize_bearer_auth(os.getenv("PAYMENTS_API_AUTH", "")),
         payments_api_timeout_seconds=int(os.getenv("PAYMENTS_API_TIMEOUT_SECONDS", "20")),

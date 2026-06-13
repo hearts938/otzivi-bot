@@ -60,6 +60,7 @@ A_PF_RECHARGE = "🔋 Перезарядка заданий"
 A_TASKS = "📁 Заказчики и тексты"
 A_IMPORT_EXCEL = "📥 Импорт из Excel"
 A_REVIEW = "📋 Задания на проверке"
+A_APPROVED_REVIEWS = "✅ Подтверждённые отзывы"
 A_SUPPORT = "📩 Поддержка"
 A_WITHDRAWALS = "💸 Заявки на вывод"
 A_PAYOUT_STATS = "📊 Статистика выплат"
@@ -69,6 +70,9 @@ BTN_PAYOUT_SEARCH = "🔍 Поиск"
 A_YM_QUIZ = "📝 Тест Яндекс Карт"
 BTN_YM_QUIZ_EDIT = "✏️ Изменить вопрос"
 BTN_YM_QUIZ_LIST = "📋 Пул вопросов"
+BTN_APPROVED_EXPORT_7 = "📥 Excel 7 дней"
+BTN_APPROVED_EXPORT_30 = "📥 Excel 30 дней"
+BTN_APPROVED_EXPORT_RANGE = "📥 Excel за период"
 
 ADMIN_MAIN_BUTTONS = frozenset({
     BTN_ADMIN_HOME,
@@ -91,6 +95,7 @@ ADMIN_MAIN_BUTTONS = frozenset({
     A_TASKS,
     A_IMPORT_EXCEL,
     A_REVIEW,
+    A_APPROVED_REVIEWS,
     A_SUPPORT,
     A_WITHDRAWALS,
     A_PAYOUT_STATS,
@@ -98,6 +103,9 @@ ADMIN_MAIN_BUTTONS = frozenset({
     A_YM_QUIZ,
     BTN_YM_QUIZ_EDIT,
     BTN_YM_QUIZ_LIST,
+    BTN_APPROVED_EXPORT_7,
+    BTN_APPROVED_EXPORT_30,
+    BTN_APPROVED_EXPORT_RANGE,
     BTN_BALANCE_CREDIT,
     BTN_BALANCE_DEBIT,
 })
@@ -265,6 +273,7 @@ def admin_root_kb() -> ReplyKeyboardMarkup:
             A_PF_RECHARGE,
             A_TASKS,
             A_REVIEW,
+            A_APPROVED_REVIEWS,
             A_SUPPORT,
             A_WITHDRAWALS,
             A_PAYOUT_STATS,
@@ -272,6 +281,17 @@ def admin_root_kb() -> ReplyKeyboardMarkup:
             A_YM_QUIZ,
             A_IMPORT_EXCEL,
             BTN_USER_MENU,
+            BTN_ADMIN_HOME,
+        )
+    )
+
+
+def admin_approved_reviews_kb() -> ReplyKeyboardMarkup:
+    return _kb(
+        _rows(
+            BTN_APPROVED_EXPORT_7,
+            BTN_APPROVED_EXPORT_30,
+            BTN_APPROVED_EXPORT_RANGE,
             BTN_ADMIN_HOME,
         )
     )
