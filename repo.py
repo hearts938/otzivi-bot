@@ -906,11 +906,29 @@ async def list_due_yandex_reviews(session: AsyncSession) -> list[YandexMapsSessi
 
 
 async def release_ym_assignment(
-    session: AsyncSession, user_id: int, text_id: int | None
+    session: AsyncSession,
+    user_id: int,
+    text_id: int | None,
+    *,
+    skip_for_user: bool = True,
 ) -> None:
-    """Устарело: используйте release_task_text."""
-    if text_id:
-        await release_task_text(session, user_id, int(text_id))
+    """Снять бронь Яндекс Карт и вернуть текст в пул (для других исполнителей)."""
+    if not text_id:
+        return
+    tt = await session.get(TaskText, text_id, with_for_update=True)
+    if not tt:
+        return
+    if tt.taken_by_user_id not in (None, user_id):
+        return
+    if tt.taken_by_user_id == user_id:
+        tt.taken_by_user_id = None
+        tt.claimed_at = None
+    now = datetime.utcnow()
+    if tt.publish_at is None or tt.publish_at <= now:
+        tt.published = True
+    if skip_for_user:
+        await _add_user_text_refusal(session, user_id, int(text_id), tt.task_id)
+    await session.commit()
 
 
 async def reset_incomplete_ym_flow(session: AsyncSession, user_id: int) -> None:
@@ -919,7 +937,7 @@ async def reset_incomplete_ym_flow(session: AsyncSession, user_id: int) -> None:
     if not ym or ym.step not in INCOMPLETE_YM_STEPS:
         return
     if ym.task_text_id:
-        await release_task_text(session, user_id, int(ym.task_text_id))
+        await release_ym_assignment(session, user_id, int(ym.task_text_id), skip_for_user=False)
     await clear_ym_session(session, user_id)
 
 
@@ -1007,6 +1025,26 @@ def _task_region_rank(task: Task, region_norm: str) -> int:
     return 2
 
 
+async def load_task_text_bodies_normalized(session: AsyncSession, task_id: int) -> set[str]:
+    """Все тексты заказчика (включая снятые с пула) — для проверки дубликатов при импорте."""
+    from services.texts_import import import_body_key
+
+    r = await session.execute(select(TaskText.body).where(TaskText.task_id == task_id))
+    return {import_body_key(b) for b in r.scalars().all()}
+
+
+async def task_text_body_exists(
+    session: AsyncSession,
+    task_id: int,
+    body: str,
+) -> bool:
+    from services.texts_import import import_body_key
+
+    key = import_body_key(body)
+    existing = await load_task_text_bodies_normalized(session, task_id)
+    return key in existing
+
+
 async def next_text_number(session: AsyncSession, task_id: int) -> int:
     r = await session.execute(
         select(func.max(TaskText.text_number)).where(TaskText.task_id == task_id)
@@ -1024,7 +1062,9 @@ async def add_task_text(
     required_gender: str | None = None,
     publish_at: datetime | None = None,
     published: bool | None = None,
-) -> TaskText:
+) -> TaskText | None:
+    if await task_text_body_exists(session, task_id, body):
+        return None
     now = datetime.utcnow()
     num = text_number if text_number is not None else await next_text_number(session, task_id)
     if published is None:
@@ -1105,13 +1145,14 @@ async def import_review_texts(
     platform_id: int,
 ) -> tuple[int, int, list[str]]:
     """Возвращает (добавлено текстов, создано заданий, ошибки)."""
-    from services.texts_import import ImportedReviewText
+    from services.texts_import import ImportedReviewText, import_body_key
 
     now = datetime.utcnow()
     texts_n = 0
     tasks_n = 0
     errors: list[str] = []
     batch = 0
+    body_cache: dict[int, set[str]] = {}
     for item in items:
         if not isinstance(item, ImportedReviewText):
             continue
@@ -1146,6 +1187,14 @@ async def import_review_texts(
                 f"Номер {item.text_number} уже есть у заказчика «{task.customer_name}», строка пропущена."
             )
             continue
+        if task.id not in body_cache:
+            body_cache[task.id] = await load_task_text_bodies_normalized(session, task.id)
+        body_key = import_body_key(item.body)
+        if body_key in body_cache[task.id]:
+            errors.append(
+                f"№{item.text_number}: такой текст уже был у заказчика «{task.customer_name}», пропуск."
+            )
+            continue
         session.add(
             TaskText(
                 task_id=task.id,
@@ -1156,6 +1205,7 @@ async def import_review_texts(
                 published=published,
             )
         )
+        body_cache[task.id].add(body_key)
         texts_n += 1
         batch += 1
         if batch >= 25:
@@ -1170,7 +1220,7 @@ async def import_review_texts_to_task(
     task_id: int,
     items: list,
 ) -> tuple[int, list[str]]:
-    from services.texts_import import ImportedReviewText
+    from services.texts_import import ImportedReviewText, import_body_key
 
     task = await session.get(Task, task_id)
     if not task:
@@ -1178,6 +1228,7 @@ async def import_review_texts_to_task(
     now = datetime.utcnow()
     added = 0
     notes: list[str] = []
+    body_cache = await load_task_text_bodies_normalized(session, task_id)
     for item in items:
         if not isinstance(item, ImportedReviewText):
             continue
@@ -1191,7 +1242,11 @@ async def import_review_texts_to_task(
             )
         )
         if clash.scalar_one_or_none():
-            notes.append(f"№{item.text_number}: уже есть.")
+            notes.append(f"№{item.text_number}: номер уже есть.")
+            continue
+        body_key = import_body_key(item.body)
+        if body_key in body_cache:
+            notes.append(f"№{item.text_number}: такой текст уже был у этого заказчика, пропуск.")
             continue
         published = item.publish_at <= now
         session.add(
@@ -1204,6 +1259,7 @@ async def import_review_texts_to_task(
                 published=published,
             )
         )
+        body_cache.add(body_key)
         added += 1
     rw_vals = [
         float(getattr(i, "reward", 0) or 0)
@@ -1313,6 +1369,8 @@ async def release_task_text(session: AsyncSession, user_id: int, text_id: int) -
     if tt.taken_by_user_id == user_id:
         tt.taken_by_user_id = None
         tt.claimed_at = None
+    tt.published = False
+    tt.publish_at = None
     await _add_user_text_refusal(session, user_id, text_id, tt.task_id)
     await session.commit()
     return True
@@ -1352,7 +1410,6 @@ async def claim_task_text(
     tt.taken_by_user_id = user_id
     tt.claimed_at = now
     tt.published = False
-    tt.publish_at = None
     await session.commit()
     await session.refresh(tt)
     return tt

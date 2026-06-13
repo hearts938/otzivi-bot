@@ -51,6 +51,7 @@ from repo import (
     get_task,
     get_yandex_conditions,
     release_task_text,
+    release_ym_assignment,
     save_ym_session,
     start_ym_session,
     task_platform_is_yandex,
@@ -366,7 +367,7 @@ async def ym_found(
             return
         if message.text == BTN_YM_NO:
             if ym.task_text_id:
-                await release_task_text(session, u.id, int(ym.task_text_id))
+                await release_ym_assignment(session, u.id, int(ym.task_text_id))
             ym.task_id = None
             ym.task_text_id = None
             ym.step = "assign"
@@ -543,7 +544,7 @@ async def ym_reset(
         ym = await get_active_ym_session(session, u.id)
         if ym:
             if ym.task_text_id:
-                await release_task_text(session, u.id, int(ym.task_text_id))
+                await release_ym_assignment(session, u.id, int(ym.task_text_id))
         if not u.gender or not ym or not ym.region:
             await clear_ym_session(session, u.id)
             await message.answer("Нет данных для нового подбора.", reply_markup=user_main_kb())

@@ -594,6 +594,13 @@ async def mt_date(
             publish_at=publish_at,
             published=published,
         )
+    if not tt:
+        await message.answer(
+            "Такой текст уже был в пуле этого заказчика.",
+            reply_markup=admin_pool_kb(),
+        )
+        await send_pool_message(message, session_factory, tid, settings)
+        return
     await message.answer(f"Добавлен текст №{tt.text_number}.", reply_markup=admin_pool_kb())
     await send_pool_message(message, session_factory, tid, settings)
 

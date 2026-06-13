@@ -1499,6 +1499,11 @@ async def task_text_add(request: Request, tid: int):
             publish_at=publish_at,
             published=published,
         )
+        if not tt:
+            return RedirectResponse(
+                f"/tasks/{tid}?err={quote('Такой текст уже был в пуле')}",
+                status_code=302,
+            )
         msg = f"Добавлен текст №{tt.text_number}"
     return RedirectResponse(f"/tasks/{tid}?msg={quote(msg)}", status_code=302)
 

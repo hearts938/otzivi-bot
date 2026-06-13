@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import io
+import re
 from dataclasses import dataclass
 from datetime import date, datetime
 
@@ -25,6 +26,17 @@ class ImportedReviewText:
 
 def _norm(s: str) -> str:
     return str(s).strip().lower().replace("ё", "е")
+
+
+def normalize_import_body(body: str) -> str:
+    """Единая нормализация текста отзыва для сравнения при импорте."""
+    s = str(body or "").strip().lower().replace("ё", "е")
+    return re.sub(r"\s+", " ", s)
+
+
+def import_body_key(body: str) -> str:
+    """Ключ текста для проверки дубликатов внутри одного заказчика."""
+    return normalize_import_body(body)
 
 
 def _pick_row(row: dict, *keys: str) -> str | None:
