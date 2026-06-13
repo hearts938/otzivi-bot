@@ -228,13 +228,11 @@ async def admin_password_get(request: Request):
     r = _need_admin(request)
     if r:
         return r
-    settings = _settings(request)
     qp = request.query_params
     return templates.TemplateResponse(
         "change_password.html",
         {
             "request": request,
-            "admin_email": settings.web_admin_email or "—",
             "msg": qp.get("msg"),
             "err": qp.get("err"),
         },
