@@ -149,6 +149,28 @@ async def list_active_web_admin_sessions(
     return list(r.scalars().all())
 
 
+async def sync_admin_session_from_cookie(
+    session: AsyncSession,
+    *,
+    session_id: str | None,
+    ip_address: str,
+    user_agent: str | None,
+) -> WebAdminSession | None:
+    """Привязать cookie к записи в БД: обновить активную или создать новую."""
+    if session_id:
+        row = await session.get(WebAdminSession, session_id)
+        if row and not row.revoked_at:
+            await touch_web_admin_session(session, session_id)
+            return row
+        if row and row.revoked_at:
+            return None
+    return await create_web_admin_session(
+        session,
+        ip_address=ip_address,
+        user_agent=user_agent,
+    )
+
+
 async def _invalidate_pending_codes(session: AsyncSession, purpose: str) -> None:
     now = datetime.utcnow()
     r = await session.execute(

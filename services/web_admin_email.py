@@ -44,6 +44,12 @@ async def send_admin_code_email(settings: Settings, *, code: str) -> None:
             subject="Код смены пароля — админ-панель",
             body=body,
         )
+    except smtplib.SMTPAuthenticationError as exc:
+        logger.exception("SMTP auth failed for %s", settings.smtp_user)
+        raise RuntimeError(
+            "Gmail не принял логин/пароль SMTP. Проверьте SMTP_USER (полный @gmail.com), "
+            "SMTP_PASSWORD (пароль приложения, не обычный пароль), включена ли 2FA на аккаунте."
+        ) from exc
     except Exception:
         logger.exception("Не удалось отправить код на %s", settings.web_admin_email)
         raise

@@ -22,6 +22,14 @@ def _normalize_bearer_auth(raw: str | None) -> str:
     return auth
 
 
+def _yandex_quiz_freeze_minutes() -> int:
+    raw_min = os.getenv("YANDEX_QUIZ_FREEZE_MINUTES", "").strip()
+    if raw_min:
+        return max(0, int(raw_min))
+    hours = int(os.getenv("YANDEX_QUIZ_FREEZE_HOURS", "4"))
+    return max(0, hours * 60)
+
+
 @dataclass(frozen=True)
 class Settings:
     bot_token: str
@@ -44,7 +52,7 @@ class Settings:
     app_timezone: str
     task_claim_minutes: int
     reviews_channel_url: str
-    yandex_quiz_freeze_hours: int
+    yandex_quiz_freeze_minutes: int
     yandex_answer_min_seconds: int
     yandex_cheat_ban_days: int
     payments_api_base_url: str
@@ -81,7 +89,7 @@ def get_settings() -> Settings:
         smtp_host=os.getenv("SMTP_HOST", "").strip(),
         smtp_port=int(os.getenv("SMTP_PORT", "587")),
         smtp_user=os.getenv("SMTP_USER", "").strip(),
-        smtp_password=os.getenv("SMTP_PASSWORD", "").strip(),
+        smtp_password=os.getenv("SMTP_PASSWORD", "").replace(" ", "").strip(),
         smtp_from=os.getenv("SMTP_FROM", "").strip() or os.getenv("SMTP_USER", "").strip(),
         web_session_secret=web_secret,
         web_host=os.getenv("WEB_HOST", "0.0.0.0"),
@@ -89,7 +97,7 @@ def get_settings() -> Settings:
         app_timezone=os.getenv("APP_TIMEZONE", "Europe/Moscow"),
         task_claim_minutes=int(os.getenv("TASK_CLAIM_MINUTES", "60")),
         reviews_channel_url=os.getenv("REVIEWS_CHANNEL_URL", "").strip(),
-        yandex_quiz_freeze_hours=int(os.getenv("YANDEX_QUIZ_FREEZE_HOURS", "4")),
+        yandex_quiz_freeze_minutes=_yandex_quiz_freeze_minutes(),
         yandex_answer_min_seconds=int(os.getenv("YANDEX_ANSWER_MIN_SECONDS", "5")),
         yandex_cheat_ban_days=int(os.getenv("YANDEX_CHEAT_BAN_DAYS", "7")),
         payments_api_base_url=os.getenv("PAYMENTS_API_BASE_URL", "https://api-payments.konsol.pro").strip(),

@@ -9,8 +9,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from database.models import YandexMapsQuestion, YandexMapsSession
-from repo import list_yandex_questions_by_order
-from services.yandex_maps import YANDEX_QUIZ_POOL_SIZE, format_question_order
+from services.yandex_maps import YANDEX_QUIZ_POOL_SIZE
 
 
 def answer_is_too_fast(shown_at: datetime | None, min_seconds: int) -> bool:
@@ -47,4 +46,12 @@ async def list_yandex_questions_for_ym_session(
         return []
     if not order:
         return []
-    return await list_yandex_questions_by_order(session, format_question_order(order))
+    order = order[:YANDEX_QUIZ_POOL_SIZE]
+    r = await session.execute(
+        select(YandexMapsQuestion).where(
+            YandexMapsQuestion.slot.in_(order),
+            YandexMapsQuestion.active.is_(True),
+        )
+    )
+    by_slot = {q.slot: q for q in r.scalars().all()}
+    return [by_slot[s] for s in order if s in by_slot]

@@ -105,7 +105,9 @@ router = APIRouter()
 
 
 def _need_admin(request: Request) -> RedirectResponse | None:
-    if not request.session.get("admin"):
+    if not request.session.get("admin") or not getattr(
+        request.state, "web_admin_session_id", None
+    ):
         return RedirectResponse("/login", status_code=302)
     return None
 

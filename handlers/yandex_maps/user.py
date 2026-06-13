@@ -57,7 +57,12 @@ from repo import (
     task_platform_is_yandex,
     user_is_banned_now,
 )
-from services.yandex_maps import YANDEX_QUIZ_POOL_SIZE, format_question_order, is_yandex_maps_slug
+from services.yandex_maps import (
+    YANDEX_QUIZ_POOL_SIZE,
+    format_question_order,
+    format_quiz_freeze_duration,
+    is_yandex_maps_slug,
+)
 from services.yandex_quiz import (
     answer_is_too_fast,
     list_yandex_questions_for_ym_session,
@@ -616,17 +621,18 @@ async def ym_answer(
                 reply_markup=ym_question_kb(),
             )
             return
-        freeze_h = settings.yandex_quiz_freeze_hours
+        freeze_min = settings.yandex_quiz_freeze_minutes
         ym.question_shown_at = None
         ym.step = "frozen"
-        ym.freeze_until = datetime.utcnow() + timedelta(hours=freeze_h)
+        ym.freeze_until = datetime.utcnow() + timedelta(minutes=freeze_min)
         await save_ym_session(session, ym)
         t = await get_task(session, ym.task_id)
         reward = float(t.reward or 0) if t else 0.0
+        freeze_label = format_quiz_freeze_duration(freeze_min)
     await state.set_state(None)
     await message.answer(
         f"✅ <b>Вы ответили на все вопросы</b>\n\n"
-        f"{blockquote(f'Бот «заморожен» на {freeze_h} ч. '
+        f"{blockquote(f'Бот «заморожен» на {freeze_label}. '
                        f'После этого придёт текст отзыва отдельным сообщением.')}\n\n"
         f"Сумма <b>{reward:.2f} ₽</b> будет зачислена в баланс ожидания.",
         parse_mode="HTML",

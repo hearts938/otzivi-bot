@@ -41,3 +41,13 @@ def parse_question_order(raw: str) -> tuple[list[int] | None, str | None]:
 
 def format_question_order(order: list[int]) -> str:
     return ",".join(str(x) for x in order)
+
+
+def format_quiz_freeze_duration(minutes: int) -> str:
+    m = max(0, int(minutes))
+    if m >= 60 and m % 60 == 0:
+        h = m // 60
+        return f"{h} ч"
+    if m >= 60:
+        return f"{m // 60} ч {m % 60} мин"
+    return f"{m} мин"
