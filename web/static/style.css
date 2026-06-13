@@ -69,6 +69,16 @@ button, input[type=submit] { cursor: pointer; }
 .pool-section-list { margin-top: 0.25rem; margin-bottom: 0.5rem; }
 .pool-item-hidden { display: none; }
 .pool-show-more { margin: 0.25rem 0 0.75rem; }
+.pool-section-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin: 0.25rem 0 0.75rem;
+}
+.pool-section-actions .pool-show-more,
+.pool-section-actions .pool-show-less {
+  margin: 0;
+}
 .btn-secondary {
   background: #f3f4f6;
   color: #111;

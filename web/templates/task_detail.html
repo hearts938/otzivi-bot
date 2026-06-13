@@ -39,7 +39,7 @@
 <div class="pool-section">
   <h3>{{ title }}{% if total > 0 %} <span class="pool-section-count">({{ total }})</span>{% endif %}</h3>
   {% if items %}
-  <ol class="pool-section-list" id="pool-{{ section_id }}">
+  <ol class="pool-section-list" id="pool-{{ section_id }}" data-preview="{{ pool_preview }}">
     {% for ln in items %}
     <li class="pool-item{% if loop.index0 >= pool_preview %} pool-item-hidden{% endif %}">
       <b>{{ ln.number }}.</b> [{{ ln.gender_label }}] {{ ln.preview }}
@@ -48,7 +48,10 @@
     {% endfor %}
   </ol>
   {% if items|length > pool_preview %}
-  <button type="button" class="btn-secondary pool-show-more" data-target="pool-{{ section_id }}">Посмотреть больше</button>
+  <div class="pool-section-actions">
+    <button type="button" class="btn-secondary pool-show-more" data-target="pool-{{ section_id }}">Посмотреть больше</button>
+    <button type="button" class="btn-secondary pool-show-less" data-target="pool-{{ section_id }}" hidden>Скрыть</button>
+  </div>
   {% endif %}
   {% if pages > 1 %}
   <nav class="pool-pagination pool-pagination-section" aria-label="Страницы: {{ title }}">
@@ -106,14 +109,36 @@
 
 <script>
 (function () {
+  function sectionFor(btn) {
+    var list = document.getElementById(btn.getAttribute('data-target'));
+    if (!list) return null;
+    return { list: list, section: list.closest('.pool-section') };
+  }
+
   document.querySelectorAll('.pool-show-more').forEach(function (btn) {
     btn.addEventListener('click', function () {
-      var list = document.getElementById(btn.getAttribute('data-target'));
-      if (!list) return;
-      list.querySelectorAll('.pool-item-hidden').forEach(function (el) {
+      var ctx = sectionFor(btn);
+      if (!ctx) return;
+      ctx.list.querySelectorAll('.pool-item-hidden').forEach(function (el) {
         el.classList.remove('pool-item-hidden');
       });
-      btn.style.display = 'none';
+      btn.hidden = true;
+      var less = ctx.section.querySelector('.pool-show-less');
+      if (less) less.hidden = false;
+    });
+  });
+
+  document.querySelectorAll('.pool-show-less').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      var ctx = sectionFor(btn);
+      if (!ctx) return;
+      var preview = parseInt(ctx.list.getAttribute('data-preview') || '3', 10);
+      ctx.list.querySelectorAll('.pool-item').forEach(function (el, i) {
+        if (i >= preview) el.classList.add('pool-item-hidden');
+      });
+      btn.hidden = true;
+      var more = ctx.section.querySelector('.pool-show-more');
+      if (more) more.hidden = false;
     });
   });
 })();
