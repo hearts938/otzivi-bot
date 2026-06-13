@@ -179,10 +179,6 @@ def build_approved_reviews_xlsx(rows: list[ApprovedReviewRow], *, tz_name: str) 
             "Пол": row.gender,
             "Текст": row.text,
             "Ссылка": row.link,
-            "Заказчик": row.customer_name,
-            "Сервис": row.platform_name,
-            "Username": f"@{row.username}" if row.username else "—",
-            "Telegram ID": row.telegram_id,
         }
         for row in rows
     ]
