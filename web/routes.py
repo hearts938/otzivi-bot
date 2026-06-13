@@ -1401,27 +1401,11 @@ def _pool_view(lines):
     return active, waiting, retired, taken
 
 
-POOL_PAGE_SIZE = 8
 POOL_PREVIEW_SIZE = 3
-
-_POOL_SECTIONS: tuple[tuple[str, str], ...] = (
-    ("active", "Активные (ещё не взяты)"),
-    ("waiting", "Ожидают публикации"),
-    ("retired", "Сняты с пула"),
-    ("taken", "Уже взяты"),
-)
+POOL_PAGE_SIZE = 8
 
 
-def _pool_flat_list(lines) -> list[dict]:
-    groups = dict(zip(("active", "waiting", "retired", "taken"), _pool_view(lines)))
-    out: list[dict] = []
-    for key, title in _POOL_SECTIONS:
-        for row in groups.get(key, []):
-            out.append({**row, "section": key, "section_title": title})
-    return out
-
-
-def _paginate_pool(items: list, page: int, *, per_page: int = POOL_PAGE_SIZE):
+def _paginate_list(items: list, page: int, *, per_page: int = POOL_PAGE_SIZE):
     total = len(items)
     if total == 0:
         return [], 1, 1, 0
@@ -1429,6 +1413,24 @@ def _paginate_pool(items: list, page: int, *, per_page: int = POOL_PAGE_SIZE):
     page = max(1, min(page, pages))
     start = (page - 1) * per_page
     return items[start : start + per_page], page, pages, total
+
+
+def _pool_section_pages(qp, key: str) -> int:
+    try:
+        return max(1, int(qp.get(key) or 1))
+    except ValueError:
+        return 1
+
+
+def _pool_section_url(task_id: int, param: str, page: int, current_pages: dict[str, int]) -> str:
+    q = {k: v for k, v in current_pages.items() if v > 1}
+    if page > 1:
+        q[param] = page
+    elif param in q:
+        del q[param]
+    if not q:
+        return f"/tasks/{task_id}"
+    return f"/tasks/{task_id}?" + "&".join(f"{k}={v}" for k, v in sorted(q.items()))
 
 
 @router.get("/tasks/{tid}", response_class=HTMLResponse)
@@ -1443,22 +1445,41 @@ async def task_detail(request: Request, tid: int):
         return HTMLResponse("Нет", status_code=404)
     qp = request.query_params
     lines = build_pool_lines(t.texts or [], tz_name=settings.app_timezone)
-    flat = _pool_flat_list(lines)
-    try:
-        pool_page = max(1, int(qp.get("page") or 1))
-    except ValueError:
-        pool_page = 1
-    pool_items, pool_page, pool_pages, pool_total = _paginate_pool(flat, pool_page)
+    active, waiting, retired, taken = _pool_view(lines)
+    ap = _pool_section_pages(qp, "ap")
+    wp = _pool_section_pages(qp, "wp")
+    rp = _pool_section_pages(qp, "rp")
+    tp = _pool_section_pages(qp, "tp")
+    active_items, active_page, active_pages, active_total = _paginate_list(active, ap)
+    waiting_items, waiting_page, waiting_pages, waiting_total = _paginate_list(waiting, wp)
+    retired_items, retired_page, retired_pages, retired_total = _paginate_list(retired, rp)
+    taken_items, taken_page, taken_pages, taken_total = _paginate_list(taken, tp)
+    page_state = {"ap": ap, "wp": wp, "rp": rp, "tp": tp}
     return templates.TemplateResponse(
         "task_detail.html",
         {
             "request": request,
             "task": t,
-            "pool_items": pool_items,
-            "pool_page": pool_page,
-            "pool_pages": pool_pages,
+            "active_items": active_items,
+            "active_page": active_page,
+            "active_pages": active_pages,
+            "active_total": active_total,
+            "waiting_items": waiting_items,
+            "waiting_page": waiting_page,
+            "waiting_pages": waiting_pages,
+            "waiting_total": waiting_total,
+            "retired_items": retired_items,
+            "retired_page": retired_page,
+            "retired_pages": retired_pages,
+            "retired_total": retired_total,
+            "taken_items": taken_items,
+            "taken_page": taken_page,
+            "taken_pages": taken_pages,
+            "taken_total": taken_total,
             "pool_total": pool_total,
             "pool_preview": POOL_PREVIEW_SIZE,
+            "pool_page_state": page_state,
+            "pool_section_url": lambda param, page: _pool_section_url(t.id, param, page, page_state),
             "msg": qp.get("msg"),
             "err": qp.get("err"),
         },

@@ -62,10 +62,13 @@ button, input[type=submit] { cursor: pointer; }
 .help-block { margin-top: 2rem; }
 .help-block h2 { font-size: 1rem; margin-bottom: 0.5rem; }
 
+.pool-section { margin-bottom: 1.5rem; }
+.pool-section-count { color: #666; font-size: 0.9rem; font-weight: normal; }
+.pool-empty { color: #666; margin: 0.25rem 0 0; }
 .pool-meta { color: #555; font-size: 0.95rem; margin-bottom: 0.75rem; }
-.pool-section-list { margin-top: 0.25rem; margin-bottom: 1rem; }
+.pool-section-list { margin-top: 0.25rem; margin-bottom: 0.5rem; }
 .pool-item-hidden { display: none; }
-.pool-show-more { margin: 0.5rem 0 1.25rem; }
+.pool-show-more { margin: 0.25rem 0 0.75rem; }
 .btn-secondary {
   background: #f3f4f6;
   color: #111;
