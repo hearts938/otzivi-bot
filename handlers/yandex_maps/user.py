@@ -50,7 +50,7 @@ from repo import (
     get_submission_for_user_task,
     get_task,
     get_yandex_conditions,
-    release_ym_assignment,
+    release_task_text,
     save_ym_session,
     start_ym_session,
     task_platform_is_yandex,
@@ -312,7 +312,7 @@ async def _handle_quiz_cheat(
 ) -> None:
     async with session_factory() as session:
         if ym and ym.task_text_id:
-            await release_ym_assignment(session, user_id, ym.task_text_id)
+            await release_task_text(session, user_id, int(ym.task_text_id))
         await ban_user_for_days(session, user_id, ban_days)
         await clear_ym_session(session, user_id)
     await state.clear()
@@ -365,7 +365,8 @@ async def ym_found(
         if not await task_platform_is_yandex(session, ym.task_id):
             return
         if message.text == BTN_YM_NO:
-            await release_ym_assignment(session, u.id, ym.task_text_id)
+            if ym.task_text_id:
+                await release_task_text(session, u.id, int(ym.task_text_id))
             ym.task_id = None
             ym.task_text_id = None
             ym.step = "assign"
@@ -375,7 +376,11 @@ async def ym_found(
             )
             if not task or not claimed:
                 await clear_ym_session(session, u.id)
-                await message.answer("Других заданий нет.", reply_markup=user_main_kb())
+                await message.answer(
+                    "Других заданий нет. Свободные тексты могут быть для другого пола "
+                    "или с будущей датой публикации.",
+                    reply_markup=user_main_kb(),
+                )
                 return
             ym.task_id = task.id
             ym.task_text_id = claimed.id
@@ -537,7 +542,8 @@ async def ym_reset(
         )
         ym = await get_active_ym_session(session, u.id)
         if ym:
-            await release_ym_assignment(session, u.id, ym.task_text_id)
+            if ym.task_text_id:
+                await release_task_text(session, u.id, int(ym.task_text_id))
         if not u.gender or not ym or not ym.region:
             await clear_ym_session(session, u.id)
             await message.answer("Нет данных для нового подбора.", reply_markup=user_main_kb())

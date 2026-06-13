@@ -908,13 +908,9 @@ async def list_due_yandex_reviews(session: AsyncSession) -> list[YandexMapsSessi
 async def release_ym_assignment(
     session: AsyncSession, user_id: int, text_id: int | None
 ) -> None:
-    """Снять привязку к тексту; текст из пула не возвращается."""
+    """Устарело: используйте release_task_text."""
     if text_id:
-        tt = await session.get(TaskText, text_id, with_for_update=True)
-        if tt and tt.taken_by_user_id == user_id:
-            tt.taken_by_user_id = None
-            tt.claimed_at = None
-    await session.commit()
+        await release_task_text(session, user_id, int(text_id))
 
 
 async def reset_incomplete_ym_flow(session: AsyncSession, user_id: int) -> None:
@@ -923,7 +919,7 @@ async def reset_incomplete_ym_flow(session: AsyncSession, user_id: int) -> None:
     if not ym or ym.step not in INCOMPLETE_YM_STEPS:
         return
     if ym.task_text_id:
-        await release_ym_assignment(session, user_id, ym.task_text_id)
+        await release_task_text(session, user_id, int(ym.task_text_id))
     await clear_ym_session(session, user_id)
 
 
@@ -1356,6 +1352,7 @@ async def claim_task_text(
     tt.taken_by_user_id = user_id
     tt.claimed_at = now
     tt.published = False
+    tt.publish_at = None
     await session.commit()
     await session.refresh(tt)
     return tt

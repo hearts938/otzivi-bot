@@ -1382,7 +1382,7 @@ async def tasks_add(request: Request):
 
 
 def _pool_view(task, lines):
-    active, waiting, taken = [], [], []
+    active, waiting, retired, taken = [], [], [], []
     for ln in lines:
         row = {
             "number": ln.number,
@@ -1394,9 +1394,11 @@ def _pool_view(task, lines):
             active.append(row)
         elif ln.status == "waiting":
             waiting.append(row)
+        elif ln.status == "retired":
+            retired.append(row)
         else:
             taken.append(row)
-    return active, waiting, taken
+    return active, waiting, retired, taken
 
 
 @router.get("/tasks/{tid}", response_class=HTMLResponse)
@@ -1410,7 +1412,7 @@ async def task_detail(request: Request, tid: int):
     if not t:
         return HTMLResponse("Нет", status_code=404)
     lines = build_pool_lines(t.texts or [], tz_name=settings.app_timezone)
-    active, waiting, taken = _pool_view(t, lines)
+    active, waiting, retired, taken = _pool_view(t, lines)
     qp = request.query_params
     return templates.TemplateResponse(
         "task_detail.html",
@@ -1419,6 +1421,7 @@ async def task_detail(request: Request, tid: int):
             "task": t,
             "active": active,
             "waiting": waiting,
+            "retired": retired,
             "taken": taken,
             "msg": qp.get("msg"),
             "err": qp.get("err"),

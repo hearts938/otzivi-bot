@@ -20,6 +20,7 @@ async def activate_due_texts(session: AsyncSession) -> int:
             TaskText.publish_at.is_not(None),
             TaskText.publish_at <= now,
             TaskText.published.is_(False),
+            TaskText.taken_by_user_id.is_(None),
         )
         .values(published=True)
     )

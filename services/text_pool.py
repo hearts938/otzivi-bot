@@ -39,12 +39,14 @@ def classify_text(
     now = now or datetime.utcnow()
     if tt.taken_by_user_id:
         return "taken", "взят пользователем"
-    waiting = not tt.published or (tt.publish_at is not None and tt.publish_at > now)
-    if waiting:
-        if tt.publish_at:
+    if not tt.published:
+        if tt.publish_at is not None and tt.publish_at > now:
             d = format_publish_date(tt.publish_at, tz_name)
             return "waiting", f"ожидает (публ. {d})"
-        return "waiting", "ожидает публикации"
+        if tt.publish_at is not None and tt.publish_at <= now:
+            d = format_publish_date(tt.publish_at, tz_name)
+            return "waiting", f"ожидает (публ. {d})"
+        return "retired", "снят с пула"
     return "active", "активен"
 
 
@@ -77,6 +79,7 @@ def format_pool_message(task: Task, lines: list[PoolLine]) -> str:
     link = task.link or "—"
     active = [ln for ln in lines if ln.status == "active"]
     waiting = [ln for ln in lines if ln.status == "waiting"]
+    retired = [ln for ln in lines if ln.status == "retired"]
     taken = [ln for ln in lines if ln.status == "taken"]
 
     def _fmt_block(title: str, items: list[PoolLine]) -> str:
@@ -99,5 +102,6 @@ def format_pool_message(task: Task, lines: list[PoolLine]) -> str:
         + _fmt_block("Активные (ещё не взяты)", active)
         + "\n"
         + _fmt_block("Ожидают публикации", waiting)
+        + ("\n" + _fmt_block("Сняты с пула", retired) if retired else "")
         + ("\n" + _fmt_block("Уже взяты", taken) if taken else "")
     )

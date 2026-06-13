@@ -47,6 +47,15 @@
 </ol>
 {% else %}<p>— нет —</p>{% endif %}
 
+{% if retired %}
+<h3>Сняты с пула</h3>
+<ol>
+  {% for ln in retired %}
+  <li><b>{{ ln.number }}.</b> [{{ ln.gender_label }}] {{ ln.preview }} — <em>{{ ln.status_label }}</em></li>
+  {% endfor %}
+</ol>
+{% endif %}
+
 {% if taken %}
 <h3>Уже взяты</h3>
 <ol>
