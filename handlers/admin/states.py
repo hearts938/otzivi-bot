@@ -43,6 +43,10 @@ class PlatformCdFSM(StatesGroup):
     seconds = State()
 
 
+class PlatformRechargeFSM(StatesGroup):
+    seconds = State()
+
+
 class CustomerAddFSM(StatesGroup):
     platform_pick = State()
     name = State()

@@ -100,11 +100,6 @@ async def reject_submission(session: AsyncSession, submission_id: int) -> bool:
         rw = float(task.reward or 0)
         user.pending_balance = max(0.0, float(user.pending_balance or 0) - rw)
     sub.status = SubmissionStatus.REJECTED
-    if sub.task_text_id:
-        tt = await session.get(TaskText, sub.task_text_id, with_for_update=True)
-        if tt:
-            tt.taken_by_user_id = None
-            tt.claimed_at = None
     await session.commit()
     return True
 

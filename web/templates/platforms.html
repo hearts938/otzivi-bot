@@ -2,16 +2,18 @@
 {% block title %}Платформы{% endblock %}
 {% block body %}
 <h1>Платформы</h1>
+<p><strong>Кулдаун</strong> — задержка перед проверкой отзыва админом. <strong>Перезарядка</strong> — пауза для пользователя между заданиями на этом сервисе.</p>
 <h2>Добавить</h2>
 <form method="post" action="/platforms/add">
   <div><label>Название <input name="name" required/></label></div>
   <div><label>Slug <input name="slug" required/></label></div>
-  <div><label>Кулдаун (сек) <input name="cd" type="number" value="3600"/></label></div>
+  <div><label>Кулдаун проверки (сек) <input name="cd" type="number" value="3600"/></label></div>
+  <div><label>Перезарядка (сек) <input name="recharge" type="number" value="3600"/></label></div>
   <button type="submit">Добавить</button>
 </form>
 <h2>Список</h2>
 <table>
-  <tr><th>id</th><th>name</th><th>slug</th><th>cd</th><th></th></tr>
+  <tr><th>id</th><th>name</th><th>slug</th><th>кулдаун</th><th>перезарядка</th><th></th></tr>
   {% for p in platforms %}
   <tr>
     <td>{{ p.id }}</td>
@@ -20,6 +22,12 @@
     <td>
       <form method="post" action="/platforms/{{ p.id }}/cd" style="display:inline">
         <input type="number" name="seconds" value="{{ p.cooldown_seconds }}" style="width:90px"/>
+        <button type="submit">OK</button>
+      </form>
+    </td>
+    <td>
+      <form method="post" action="/platforms/{{ p.id }}/recharge" style="display:inline">
+        <input type="number" name="seconds" value="{{ p.user_recharge_seconds }}" style="width:90px"/>
         <button type="submit">OK</button>
       </form>
     </td>

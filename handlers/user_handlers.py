@@ -63,6 +63,7 @@ from repo import (
     get_user_claimed_text,
     user_refused_text,
     list_platforms_available_for_user,
+    user_platform_recharge_until,
     list_tasks_available_for_user,
     list_tasks_available_for_user_on_platform,
     count_approved_submissions,
@@ -425,11 +426,6 @@ async def _open_task_assignment(
             return False
         claimed = await get_user_claimed_text(session, u.id, task_id)
         if claimed and await user_refused_text(session, u.id, claimed.id):
-            tt_fix = await session.get(TaskText, claimed.id)
-            if tt_fix and tt_fix.taken_by_user_id == u.id:
-                tt_fix.taken_by_user_id = None
-                tt_fix.claimed_at = None
-                await session.commit()
             claimed = None
         if claimed:
             await state.update_data(tasks_platform_id=t.platform_id)
@@ -484,6 +480,21 @@ async def _try_assign_platform(
         tasks = await list_tasks_available_for_user_on_platform(
             session, u.id, u.gender, platform_id
         )
+        recharge_until = await user_platform_recharge_until(session, u.id, platform_id)
+    if recharge_until and not tasks:
+        from datetime import timezone
+        from zoneinfo import ZoneInfo
+
+        until_local = recharge_until.replace(tzinfo=timezone.utc).astimezone(
+            ZoneInfo(settings.app_timezone)
+        )
+        await message.answer(
+            f"На этом сервисе перерыв до <b>{until_local.strftime('%d.%m.%Y %H:%M')}</b> "
+            f"({settings.app_timezone}) — после отправки предыдущего задания на проверку.",
+            parse_mode="HTML",
+            reply_markup=user_main_kb(),
+        )
+        return
     if not tasks:
         await message.answer(
             "По этому сервису сейчас нет доступных заданий.",
@@ -615,8 +626,8 @@ async def msg_refuse(
     data = await state.get_data()
     pid = data.get("tasks_platform_id")
     await message.answer(
-        "Вы отказались от задания. Этот текст Вы больше не сможете взять. "
-        "Вы можете взять другое задание.",
+        "Вы отказались от задания. Этот текст снят с пула и больше не выдаётся. "
+        "Можете взять другое задание.",
         reply_markup=user_main_kb(),
     )
     await _send_platform_list(message, session_factory, state)

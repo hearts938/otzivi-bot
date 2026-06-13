@@ -422,11 +422,25 @@ async def list_platforms_all(session: AsyncSession) -> list[Platform]:
     return list(r.scalars().all())
 
 
-async def create_platform(session: AsyncSession, name: str, slug: str, cooldown_seconds: int) -> Platform | None:
+async def create_platform(
+    session: AsyncSession,
+    name: str,
+    slug: str,
+    cooldown_seconds: int,
+    *,
+    user_recharge_seconds: int | None = None,
+) -> Platform | None:
     slug_n = re.sub(r"[^a-z0-9_]+", "_", slug.strip().lower()).strip("_") or "platform"
     if await get_platform_by_slug(session, slug_n):
         return None
-    p = Platform(name=name.strip()[:255], slug=slug_n, cooldown_seconds=max(0, int(cooldown_seconds)), active=True)
+    recharge = 3600 if user_recharge_seconds is None else max(0, int(user_recharge_seconds))
+    p = Platform(
+        name=name.strip()[:255],
+        slug=slug_n,
+        cooldown_seconds=max(0, int(cooldown_seconds)),
+        user_recharge_seconds=recharge,
+        active=True,
+    )
     session.add(p)
     await session.commit()
     await session.refresh(p)
@@ -450,6 +464,45 @@ async def update_platform_cooldown(session: AsyncSession, platform_id: int, seco
     p.cooldown_seconds = max(0, int(seconds))
     await session.commit()
     return True
+
+
+async def update_platform_user_recharge(session: AsyncSession, platform_id: int, seconds: int) -> bool:
+    p = await session.get(Platform, platform_id)
+    if not p:
+        return False
+    p.user_recharge_seconds = max(0, int(seconds))
+    await session.commit()
+    return True
+
+
+async def user_platform_recharge_until(
+    session: AsyncSession, user_id: int, platform_id: int
+) -> datetime | None:
+    p = await session.get(Platform, platform_id)
+    if not p or int(p.user_recharge_seconds or 0) <= 0:
+        return None
+    r = await session.execute(
+        select(func.max(Submission.completed_at))
+        .join(Task, Task.id == Submission.task_id)
+        .where(
+            Submission.user_id == user_id,
+            Task.platform_id == platform_id,
+            Submission.completed_at.is_not(None),
+        )
+    )
+    last = r.scalar_one_or_none()
+    if not last:
+        return None
+    until = last + timedelta(seconds=int(p.user_recharge_seconds))
+    if until <= datetime.utcnow():
+        return None
+    return until
+
+
+async def user_platform_in_recharge(
+    session: AsyncSession, user_id: int, platform_id: int
+) -> bool:
+    return await user_platform_recharge_until(session, user_id, platform_id) is not None
 
 
 async def list_active_tasks(session: AsyncSession) -> list[Task]:
@@ -481,6 +534,13 @@ async def list_tasks_available_for_user(
     if not gender:
         return []
     now = datetime.utcnow()
+    recharge_platforms: set[int] = set()
+    r_pf = await session.execute(select(Platform.id, Platform.user_recharge_seconds))
+    for pid, recharge_sec in r_pf.all():
+        if int(recharge_sec or 0) <= 0:
+            continue
+        if await user_platform_in_recharge(session, user_id, int(pid)):
+            recharge_platforms.add(int(pid))
     has_submission = exists(
         select(1).where(
             Submission.user_id == user_id,
@@ -519,7 +579,23 @@ async def list_tasks_available_for_user(
         )
         .order_by(Task.id.desc())
     )
-    return list(r.scalars().unique().all())
+    tasks = list(r.scalars().unique().all())
+    if not recharge_platforms:
+        return tasks
+    r_claimed = await session.execute(
+        select(TaskText.task_id)
+        .join(Task, Task.id == TaskText.task_id)
+        .where(
+            TaskText.taken_by_user_id == user_id,
+            Task.platform_id.in_(recharge_platforms),
+        )
+    )
+    claimed_on_recharge = {int(row[0]) for row in r_claimed.all()}
+    return [
+        t
+        for t in tasks
+        if t.platform_id not in recharge_platforms or t.id in claimed_on_recharge
+    ]
 
 
 async def list_tasks_available_for_user_on_platform(
@@ -832,6 +908,7 @@ async def list_due_yandex_reviews(session: AsyncSession) -> list[YandexMapsSessi
 async def release_ym_assignment(
     session: AsyncSession, user_id: int, text_id: int | None
 ) -> None:
+    """Снять привязку к тексту; текст из пула не возвращается."""
     if text_id:
         tt = await session.get(TaskText, text_id, with_for_update=True)
         if tt and tt.taken_by_user_id == user_id:
@@ -1231,7 +1308,7 @@ async def get_user_claimed_text(
 
 
 async def release_task_text(session: AsyncSession, user_id: int, text_id: int) -> bool:
-    """Вернуть текст в пул (отказ). Отказ и снятие брони — одна транзакция."""
+    """Отказ от задания. Текст остаётся снятым с пула (published=false)."""
     tt = await session.get(TaskText, text_id, with_for_update=True)
     if not tt:
         return False
@@ -1278,6 +1355,7 @@ async def claim_task_text(
         return None
     tt.taken_by_user_id = user_id
     tt.claimed_at = now
+    tt.published = False
     await session.commit()
     await session.refresh(tt)
     return tt
@@ -1286,7 +1364,7 @@ async def claim_task_text(
 async def release_expired_task_claims(
     session: AsyncSession, max_minutes: int
 ) -> int:
-    """Снять просроченные брони (без отказа — текст снова в пуле)."""
+    """Снять просроченные брони. Текст в пул не возвращается."""
     cutoff = datetime.utcnow() - timedelta(minutes=max(1, int(max_minutes)))
     r = await session.execute(
         select(TaskText).where(
@@ -1476,6 +1554,23 @@ async def list_tasks_with_pending_reviews(
         if t:
             out.append((t, int(cnt)))
     return out
+
+
+async def list_pending_submissions_for_platform(
+    session: AsyncSession, platform_id: int
+) -> list[Submission]:
+    await release_expired_cooldowns(session)
+    r = await session.execute(
+        select(Submission)
+        .join(Task, Task.id == Submission.task_id)
+        .where(
+            Task.platform_id == platform_id,
+            Submission.status.in_(_moderation_queue_statuses()),
+        )
+        .options(selectinload(Submission.user), selectinload(Submission.task))
+        .order_by(Submission.completed_at.asc().nulls_last(), Submission.id.asc())
+    )
+    return list(r.scalars().unique().all())
 
 
 async def list_pending_submissions_for_task(

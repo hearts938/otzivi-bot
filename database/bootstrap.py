@@ -61,6 +61,8 @@ def _sqlite_add_columns(connection) -> None:
     if "withdrawal_requests" in names:
         add("withdrawal_requests", "admin_status", "VARCHAR(32) DEFAULT 'pending'")
         add("withdrawal_requests", "admin_decided_at", "DATETIME")
+    if "platforms" in names:
+        add("platforms", "user_recharge_seconds", "INTEGER DEFAULT 3600")
 
 
 def _migrate_sync(connection) -> None:
@@ -83,19 +85,29 @@ async def seed_defaults(session_factory: async_sessionmaker[AsyncSession]) -> No
         r = await session.execute(select(Platform).limit(1))
         if r.scalar_one_or_none() is None:
             defaults = [
-                ("Яндекс Карты", "yandex_maps", 3600),
-                ("2ГИС", "2gis", 3600),
-                ("Google Карты", "google_maps", 3600),
-                ("Общее", "default", 0),
+                ("Яндекс Карты", "yandex_maps", 3600, 3600),
+                ("2ГИС", "2gis", 3600, 3600),
+                ("Google Карты", "google_maps", 3600, 3600),
+                ("Общее", "default", 0, 0),
             ]
-            for name, slug, cd in defaults:
-                session.add(Platform(name=name, slug=slug, cooldown_seconds=cd, active=True))
+            for name, slug, cd, recharge in defaults:
+                session.add(
+                    Platform(
+                        name=name,
+                        slug=slug,
+                        cooldown_seconds=cd,
+                        user_recharge_seconds=recharge,
+                        active=True,
+                    )
+                )
             await session.commit()
 
         r2 = await session.execute(select(Platform).where(Platform.slug == "default"))
         default_pf = r2.scalar_one_or_none()
         if not default_pf:
-            session.add(Platform(name="Общее", slug="default", cooldown_seconds=0, active=True))
+            session.add(
+                Platform(name="Общее", slug="default", cooldown_seconds=0, user_recharge_seconds=0, active=True)
+            )
             await session.commit()
             r2 = await session.execute(select(Platform).where(Platform.slug == "default"))
             default_pf = r2.scalar_one_or_none()

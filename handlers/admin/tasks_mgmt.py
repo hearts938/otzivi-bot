@@ -68,7 +68,7 @@ async def send_pool_message(
         t = await get_task(session, tid)
     if not t:
         return
-    lines = build_pool_lines(t.texts or [])
+    lines = build_pool_lines(t.texts or [], tz_name=settings.app_timezone)
     text = format_pool_message(t, lines)
     await message.answer(
         text,

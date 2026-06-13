@@ -51,7 +51,7 @@ async def ym_quiz_start(message: Message, settings: Settings, state: FSMContext)
     await state.clear()
     await message.answer(
         "📝 <b>Тест Яндекс Карт</b>\n\n"
-        "Редактирование пула контрольных вопросов (10 случайных на пользователя).",
+        "Редактирование пула контрольных вопросов (2 случайных на пользователя).",
         reply_markup=admin_ym_quiz_kb(),
         parse_mode="HTML",
     )

@@ -7,6 +7,7 @@ from datetime import datetime
 from database.models import Task, TaskText
 from services.gender import gender_label
 from services.reward_input import format_reward_rub
+from services.timezone_util import format_publish_date
 
 
 @dataclass
@@ -30,25 +31,33 @@ def parse_number_list(raw: str) -> list[int]:
     return sorted(set(out))
 
 
-def classify_text(tt: TaskText, now: datetime | None = None) -> tuple[str, str]:
+def classify_text(
+    tt: TaskText,
+    now: datetime | None = None,
+    tz_name: str = "Europe/Moscow",
+) -> tuple[str, str]:
     now = now or datetime.utcnow()
     if tt.taken_by_user_id:
         return "taken", "взят пользователем"
     waiting = not tt.published or (tt.publish_at is not None and tt.publish_at > now)
     if waiting:
         if tt.publish_at:
-            d = tt.publish_at.strftime("%d.%m.%Y")
+            d = format_publish_date(tt.publish_at, tz_name)
             return "waiting", f"ожидает (публ. {d})"
         return "waiting", "ожидает публикации"
     return "active", "активен"
 
 
-def build_pool_lines(texts: list[TaskText], now: datetime | None = None) -> list[PoolLine]:
+def build_pool_lines(
+    texts: list[TaskText],
+    now: datetime | None = None,
+    tz_name: str = "Europe/Moscow",
+) -> list[PoolLine]:
     now = now or datetime.utcnow()
     lines: list[PoolLine] = []
     for tt in sorted(texts, key=lambda x: (x.text_number or 999999, x.id)):
         num = tt.text_number or tt.id
-        st, label = classify_text(tt, now)
+        st, label = classify_text(tt, now, tz_name)
         lines.append(
             PoolLine(
                 number=num,

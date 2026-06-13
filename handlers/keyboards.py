@@ -55,7 +55,8 @@ A_STARS = "⭐ Курс звёзд"
 A_OUTREACH = "✉️ Сообщение пользователю"
 A_PF_ADD = "➕ Добавить сервис"
 A_PF_DEL = "🗑 Удалить сервис"
-A_PF_CD = "⏱ Кулдауны сервисов"
+A_PF_CD = "⏱ Кулдаун проверки"
+A_PF_RECHARGE = "🔋 Перезарядка заданий"
 A_TASKS = "📁 Заказчики и тексты"
 A_IMPORT_EXCEL = "📥 Импорт из Excel"
 A_REVIEW = "📋 Задания на проверке"
@@ -86,6 +87,7 @@ ADMIN_MAIN_BUTTONS = frozenset({
     A_PF_ADD,
     A_PF_DEL,
     A_PF_CD,
+    A_PF_RECHARGE,
     A_TASKS,
     A_IMPORT_EXCEL,
     A_REVIEW,
@@ -260,6 +262,7 @@ def admin_root_kb() -> ReplyKeyboardMarkup:
             A_PF_ADD,
             A_PF_DEL,
             A_PF_CD,
+            A_PF_RECHARGE,
             A_TASKS,
             A_REVIEW,
             A_SUPPORT,
@@ -622,6 +625,22 @@ def cooldown_platform_label(platform_id: int, name: str, seconds: int) -> str:
 def parse_cooldown_platform(text: str | None) -> int | None:
     text = _btn_text(text)
     if not text or not text.startswith("⏱") or "·#" not in text:
+        return None
+    try:
+        return int(text.rsplit("·#", 1)[1])
+    except ValueError:
+        return None
+
+
+def recharge_platform_label(platform_id: int, name: str, seconds: int) -> str:
+    from services.cooldown_input import format_cooldown_hours
+
+    return f"🔋 {name[:24]} ({format_cooldown_hours(seconds)}) ·#{platform_id}"
+
+
+def parse_recharge_platform(text: str | None) -> int | None:
+    text = _btn_text(text)
+    if not text or not text.startswith("🔋") or "·#" not in text:
         return None
     try:
         return int(text.rsplit("·#", 1)[1])

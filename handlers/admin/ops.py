@@ -17,6 +17,7 @@ from handlers.keyboards import (
     A_PF_ADD,
     A_PF_CD,
     A_PF_DEL,
+    A_PF_RECHARGE,
     A_STARS,
     BTN_ADMIN_HOME,
     admin_back_home_kb,
@@ -27,12 +28,22 @@ from handlers.keyboards import (
     delete_platform_label,
     parse_cooldown_platform,
     parse_delete_platform,
+    parse_recharge_platform,
     platform_pick_label,
+    recharge_platform_label,
 )
-from handlers.admin.states import BalanceFSM, OutreachFSM, PlatformAddFSM, PlatformCdFSM, StarsFSM
+from handlers.admin.states import (
+    BalanceFSM,
+    OutreachFSM,
+    PlatformAddFSM,
+    PlatformCdFSM,
+    PlatformRechargeFSM,
+    StarsFSM,
+)
 from services.cooldown_input import (
     COOLDOWN_HOURS_INVALID,
     COOLDOWN_HOURS_PROMPT,
+    RECHARGE_HOURS_PROMPT,
     format_cooldown_hours,
     hours_to_cooldown_seconds,
     parse_cooldown_hours,
@@ -47,6 +58,7 @@ from repo import (
     resolve_user_ref,
     set_setting,
     update_platform_cooldown,
+    update_platform_user_recharge,
 )
 
 router = Router(name="admin_ops")
@@ -375,7 +387,7 @@ async def pf_cd_menu(message: Message, session_factory: async_sessionmaker[Async
         pls = await list_platforms_all(session)
     labels = [cooldown_platform_label(p.id, p.name, p.cooldown_seconds) for p in pls]
     await message.answer(
-        f"⏱ <b>Кулдауны сервисов</b>\n\n{blockquote('Выберите сервис.')}",
+        f"⏱ <b>Кулдаун перед проверкой</b>\n\n{blockquote('Выберите сервис.')}",
         reply_markup=admin_labeled_list_kb(labels, [BTN_ADMIN_HOME]),
         parse_mode="HTML",
     )
@@ -414,7 +426,59 @@ async def pf_cd_apply(
     async with session_factory() as session:
         ok = await update_platform_cooldown(session, pid, seconds)
     await message.answer(
-        f"Сохранено: {format_cooldown_hours(seconds)}." if ok else "Ошибка.",
+        f"Сохранено (кулдаун проверки): {format_cooldown_hours(seconds)}." if ok else "Ошибка.",
+        reply_markup=admin_back_home_kb(),
+    )
+
+
+@router.message(F.text == A_PF_RECHARGE)
+async def pf_recharge_menu(message: Message, session_factory: async_sessionmaker[AsyncSession], settings: Settings):
+    if not is_admin(message.from_user.id, settings):
+        return
+    async with session_factory() as session:
+        pls = await list_platforms_all(session)
+    labels = [recharge_platform_label(p.id, p.name, p.user_recharge_seconds) for p in pls]
+    await message.answer(
+        f"🔋 <b>Перезарядка между заданиями</b>\n\n{blockquote('Выберите сервис.')}",
+        reply_markup=admin_labeled_list_kb(labels, [BTN_ADMIN_HOME]),
+        parse_mode="HTML",
+    )
+
+
+@router.message(F.text.func(lambda t: parse_recharge_platform(t) is not None))
+async def pf_recharge_pick(message: Message, settings: Settings, state: FSMContext):
+    if not is_admin(message.from_user.id, settings):
+        return
+    pid = parse_recharge_platform(message.text or "")
+    if pid is None:
+        return
+    await state.set_state(PlatformRechargeFSM.seconds)
+    await state.update_data(pf_id=pid)
+    await message.answer(RECHARGE_HOURS_PROMPT, reply_markup=admin_cancel_kb(), parse_mode="HTML")
+
+
+@router.message(PlatformRechargeFSM.seconds, F.text)
+async def pf_recharge_apply(
+    message: Message,
+    state: FSMContext,
+    settings: Settings,
+    session_factory: async_sessionmaker[AsyncSession],
+):
+    if not is_admin(message.from_user.id, settings):
+        await state.clear()
+        return
+    hours = parse_cooldown_hours(message.text or "")
+    if hours is None:
+        await message.answer(COOLDOWN_HOURS_INVALID, reply_markup=admin_cancel_kb(), parse_mode="HTML")
+        return
+    seconds = hours_to_cooldown_seconds(hours)
+    data = await state.get_data()
+    pid = int(data.get("pf_id", 0))
+    await state.clear()
+    async with session_factory() as session:
+        ok = await update_platform_user_recharge(session, pid, seconds)
+    await message.answer(
+        f"Сохранено (перезарядка): {format_cooldown_hours(seconds)}." if ok else "Ошибка.",
         reply_markup=admin_back_home_kb(),
     )
 

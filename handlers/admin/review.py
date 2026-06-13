@@ -14,7 +14,6 @@ from handlers.keyboards import (
     A_REVIEW,
     BTN_ADMIN_HOME,
     BTN_BACK_REVIEW,
-    BTN_BACK_REVIEW_PF,
     admin_back_home_kb,
     admin_labeled_list_kb,
     admin_moderation_item_kb,
@@ -24,14 +23,12 @@ from handlers.keyboards import (
     parse_review_task,
     parse_submission_action,
     review_platform_label,
-    review_task_label,
 )
 from repo import (
     count_submissions_in_cooldown,
     get_submission_detail,
-    list_pending_submissions_for_task,
+    list_pending_submissions_for_platform,
     list_platforms_with_pending_reviews,
-    list_tasks_with_pending_reviews,
 )
 from services.rewards import approve_submission, reject_submission
 
@@ -43,6 +40,36 @@ def _review_queue_hint(pending: int, waiting_cooldown: int) -> str:
         f"На проверке: <b>{pending}</b>\n"
         f"Ожидается (кулдаун): <b>{waiting_cooldown}</b>"
     )
+
+
+async def _send_platform_reviews(
+    message: Message,
+    session_factory: async_sessionmaker[AsyncSession],
+    platform_id: int,
+) -> None:
+    async with session_factory() as session:
+        subs = await list_pending_submissions_for_platform(session, platform_id)
+        waiting = await count_submissions_in_cooldown(session, platform_id=platform_id)
+    hint = _review_queue_hint(len(subs), waiting)
+    if not subs:
+        await message.answer(
+            f"📋 <b>Задания на проверке</b>\n\n{blockquote(hint if waiting else 'Нет отзывов на проверке по этому сервису.')}",
+            parse_mode="HTML",
+            reply_markup=admin_labeled_list_kb([], [BTN_BACK_REVIEW, BTN_ADMIN_HOME]),
+        )
+        return
+    await message.answer(
+        f"📋 <b>Задания на проверке</b>\n\n{blockquote(hint)}",
+        parse_mode="HTML",
+        reply_markup=_kb(_rows(BTN_BACK_REVIEW, BTN_ADMIN_HOME)),
+    )
+    for sub in subs:
+        task = sub.task
+        await message.answer(
+            admin_submission_review_text(sub, task),
+            parse_mode="HTML",
+            reply_markup=admin_moderation_item_kb(sub.id),
+        )
 
 
 @router.message(F.text == A_REVIEW)
@@ -89,38 +116,11 @@ async def msg_review_platform(
     if pid is None:
         return
     await state.update_data(review_platform_id=pid)
-    async with session_factory() as session:
-        rows = await list_tasks_with_pending_reviews(session, pid)
-        waiting = await count_submissions_in_cooldown(session, platform_id=pid)
-    pending_total = sum(cnt for _, cnt in rows)
-    hint = _review_queue_hint(pending_total, waiting)
-    if not rows:
-        await message.answer(
-            f"📋 <b>Задания сервиса</b>\n\n{blockquote(hint if waiting else 'Нет заданий на проверке.')}",
-            parse_mode="HTML",
-            reply_markup=admin_back_home_kb(),
-        )
-        return
-    labels = [review_task_label(t.id, t.customer_name or t.title or "", cnt) for t, cnt in rows]
-    await message.answer(
-        f"📋 <b>Задания сервиса</b>\n\n{blockquote(hint)}\n\nВыберите задание.",
-        parse_mode="HTML",
-        reply_markup=admin_labeled_list_kb(labels, [BTN_BACK_REVIEW_PF, BTN_BACK_REVIEW, BTN_ADMIN_HOME]),
-    )
-
-
-@router.message(F.text == BTN_BACK_REVIEW_PF)
-async def msg_back_platforms(
-    message: Message,
-    session_factory: async_sessionmaker[AsyncSession],
-    settings: Settings,
-    state: FSMContext,
-):
-    await msg_review_root(message, session_factory, settings, state)
+    await _send_platform_reviews(message, session_factory, pid)
 
 
 @router.message(F.text.func(lambda t: parse_review_task(t) is not None))
-async def msg_review_task(
+async def msg_review_task_legacy(
     message: Message,
     session_factory: async_sessionmaker[AsyncSession],
     settings: Settings,
@@ -128,33 +128,12 @@ async def msg_review_task(
 ):
     if not is_admin(message.from_user.id, settings):
         return
-    tid = parse_review_task(message.text or "")
-    if tid is None:
+    data = await state.get_data()
+    pid = data.get("review_platform_id")
+    if not pid:
+        await msg_review_root(message, session_factory, settings, state)
         return
-    await state.update_data(review_task_id=tid)
-    async with session_factory() as session:
-        subs = await list_pending_submissions_for_task(session, tid)
-        waiting = await count_submissions_in_cooldown(session, task_id=tid)
-    hint = _review_queue_hint(len(subs), waiting)
-    if not subs:
-        await message.answer(
-            f"📋 <b>Заказчик</b>\n\n{blockquote(hint if waiting else 'Нет отзывов на проверке.')}",
-            parse_mode="HTML",
-            reply_markup=admin_back_home_kb(),
-        )
-        return
-    await message.answer(
-        f"📋 <b>Заказчик</b>\n\n{blockquote(hint)}",
-        parse_mode="HTML",
-        reply_markup=_kb(_rows(BTN_BACK_REVIEW_PF, BTN_BACK_REVIEW, BTN_ADMIN_HOME)),
-    )
-    for sub in subs:
-        task = sub.task
-        await message.answer(
-            admin_submission_review_text(sub, task),
-            parse_mode="HTML",
-            reply_markup=admin_moderation_item_kb(sub.id),
-        )
+    await _send_platform_reviews(message, session_factory, int(pid))
 
 
 @router.message(F.text.func(lambda t: parse_submission_action(t) is not None))

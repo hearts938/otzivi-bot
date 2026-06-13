@@ -36,8 +36,8 @@ from repo import (
     count_submissions_in_cooldown,
     import_review_texts,
     list_pending_submissions_for_task,
+    list_pending_submissions_for_platform,
     list_platforms_with_pending_reviews,
-    list_tasks_with_pending_reviews,
     list_all_yandex_questions,
     update_yandex_question,
     list_all_tasks,
@@ -53,6 +53,8 @@ from repo import (
     set_user_banned,
     user_is_banned_now,
     update_platform_cooldown,
+    update_platform_user_recharge,
+    user_platform_recharge_until,
 )
 from services.broadcast import (
     attachment_from_upload,
@@ -701,17 +703,34 @@ async def review_platform(request: Request, platform_id: int):
         platform = await session.get(Platform, platform_id)
         if not platform:
             return RedirectResponse("/review?err=" + quote("Сервис не найден"), status_code=303)
-        tasks = await list_tasks_with_pending_reviews(session, platform_id)
+        subs = await list_pending_submissions_for_platform(session, platform_id)
         cooldown = await count_submissions_in_cooldown(session, platform_id=platform_id)
-    pending_total = sum(cnt for _, cnt in tasks)
+    rows = []
+    for sub in subs:
+        done = sub.completed_at or sub.created_at
+        rows.append(
+            {
+                "id": sub.id,
+                "user": sub.user,
+                "gender_label": gender_label(sub.user.gender if sub.user else None),
+                "review_text": sub.review_text or "",
+                "done_at": done.strftime("%d.%m.%Y %H:%M") if done else "—",
+                "task_name": (
+                    (sub.task.customer_name or sub.task.title or f"Задание #{sub.task_id}")
+                    if sub.task
+                    else "—"
+                ),
+            }
+        )
     return templates.TemplateResponse(
         "review_platform.html",
         {
             "request": request,
             "platform": platform,
-            "tasks": tasks,
-            "pending_total": pending_total,
+            "submissions": rows,
             "cooldown": cooldown,
+            "msg": request.query_params.get("msg"),
+            "err": request.query_params.get("err"),
         },
     )
 
@@ -772,6 +791,7 @@ async def review_approve(request: Request, submission_id: int):
         return r
     settings = _settings(request)
     task_id: int | None = None
+    platform_id: int | None = None
     user_tg: int | None = None
     info: str | None = None
     async with _sf(request)() as session:
@@ -779,13 +799,16 @@ async def review_approve(request: Request, submission_id: int):
 
         sub_before = await session.get(Submission, submission_id)
         task_id = sub_before.task_id if sub_before else None
+        if task_id:
+            t = await get_task(session, task_id)
+            platform_id = t.platform_id if t else None
         info = await approve_submission(session, settings, submission_id)
         if info:
             sub_after = await session.get(Submission, submission_id)
             if sub_after and sub_after.user_id:
                 u = await session.get(User, sub_after.user_id)
                 user_tg = u.telegram_id if u else None
-    if not info or not task_id:
+    if not info or not platform_id:
         return RedirectResponse(
             f"/review?err={quote('Не удалось одобрить')}",
             status_code=303,
@@ -793,7 +816,7 @@ async def review_approve(request: Request, submission_id: int):
     if user_tg:
         await _notify_review_decision(request, user_tg, approved=True)
     return RedirectResponse(
-        f"/review/task/{task_id}?msg={quote(info.replace(chr(10), ' '))}",
+        f"/review/platform/{platform_id}?msg={quote(info.replace(chr(10), ' '))}",
         status_code=303,
     )
 
@@ -804,6 +827,7 @@ async def review_reject(request: Request, submission_id: int):
     if r:
         return r
     task_id: int | None = None
+    platform_id: int | None = None
     user_tg: int | None = None
     ok = False
     async with _sf(request)() as session:
@@ -811,11 +835,14 @@ async def review_reject(request: Request, submission_id: int):
 
         sub_before = await session.get(Submission, submission_id)
         task_id = sub_before.task_id if sub_before else None
+        if task_id:
+            t = await get_task(session, task_id)
+            platform_id = t.platform_id if t else None
         if sub_before and sub_before.user_id:
             u = await session.get(User, sub_before.user_id)
             user_tg = u.telegram_id if u else None
         ok = await reject_submission(session, submission_id)
-    if not ok or not task_id:
+    if not ok or not platform_id:
         return RedirectResponse(
             f"/review?err={quote('Не удалось отклонить')}",
             status_code=303,
@@ -823,7 +850,7 @@ async def review_reject(request: Request, submission_id: int):
     if user_tg:
         await _notify_review_decision(request, user_tg, approved=False)
     return RedirectResponse(
-        f"/review/task/{task_id}?msg={quote('Отклонено')}",
+        f"/review/platform/{platform_id}?msg={quote('Отклонено')}",
         status_code=303,
     )
 
@@ -1251,8 +1278,12 @@ async def platforms_add(request: Request):
         cd = int(form.get("cd") or 0)
     except ValueError:
         cd = 0
+    try:
+        recharge = int(form.get("recharge") or 3600)
+    except ValueError:
+        recharge = 3600
     async with _sf(request)() as session:
-        await create_platform(session, name, slug, cd)
+        await create_platform(session, name, slug, cd, user_recharge_seconds=recharge)
     return RedirectResponse("/platforms", status_code=302)
 
 
@@ -1268,6 +1299,21 @@ async def platforms_cd(request: Request, pid: int):
         s = 0
     async with _sf(request)() as session:
         await update_platform_cooldown(session, pid, s)
+    return RedirectResponse("/platforms", status_code=302)
+
+
+@router.post("/platforms/{pid}/recharge")
+async def platforms_recharge(request: Request, pid: int):
+    r = _need_admin(request)
+    if r:
+        return r
+    form = await request.form()
+    try:
+        s = int(form.get("seconds") or 0)
+    except ValueError:
+        s = 0
+    async with _sf(request)() as session:
+        await update_platform_user_recharge(session, pid, s)
     return RedirectResponse("/platforms", status_code=302)
 
 
@@ -1358,11 +1404,12 @@ async def task_detail(request: Request, tid: int):
     r = _need_admin(request)
     if r:
         return r
+    settings = _settings(request)
     async with _sf(request)() as session:
         t = await get_task(session, tid)
     if not t:
         return HTMLResponse("Нет", status_code=404)
-    lines = build_pool_lines(t.texts or [])
+    lines = build_pool_lines(t.texts or [], tz_name=settings.app_timezone)
     active, waiting, taken = _pool_view(t, lines)
     qp = request.query_params
     return templates.TemplateResponse(

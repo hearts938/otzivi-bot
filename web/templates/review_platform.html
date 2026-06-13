@@ -2,18 +2,33 @@
 {% block title %}Проверка — {{ platform.name }}{% endblock %}
 {% block body %}
 <h1>{{ platform.name }}</h1>
-<p>На проверке: <strong>{{ pending_total }}</strong> · в кулдауне: <strong>{{ cooldown }}</strong></p>
-{% if tasks %}
-<ul>
-  {% for t, cnt in tasks %}
-  <li>
-    <a href="/review/task/{{ t.id }}">{{ t.customer_name or t.title or ('Задание #' ~ t.id) }}</a>
-    — {{ cnt }} отзыв(ов)
-  </li>
-  {% endfor %}
-</ul>
+<p>На проверке: <strong>{{ submissions|length }}</strong> · в кулдауне: <strong>{{ cooldown }}</strong></p>
+{% if msg %}<p class="alert alert-ok">{{ msg }}</p>{% endif %}
+{% if err %}<p class="alert alert-err">{{ err }}</p>{% endif %}
+
+{% for sub in submissions %}
+<div style="border:1px solid #ccc;padding:1rem;margin:1rem 0;border-radius:8px">
+  <h3>Отзыв #{{ sub.id }} · {{ sub.task_name }}</h3>
+  <p>
+    <strong>Исполнитель:</strong>
+    {% if sub.user.username %}@{{ sub.user.username }}{% else %}—{% endif %}
+    · tg <code>{{ sub.user.telegram_id }}</code><br/>
+    <strong>Имя на площадке:</strong> {{ sub.user.platform_account_name or '—' }}<br/>
+    <strong>Пол:</strong> {{ sub.gender_label }}<br/>
+    <strong>Выполнено:</strong> {{ sub.done_at }}
+  </p>
+  <pre style="white-space:pre-wrap;background:#f5f5f5;padding:0.75rem">{{ sub.review_text }}</pre>
+  <form method="post" action="/review/{{ sub.id }}/approve" style="display:inline">
+    <button type="submit" class="btn-primary">Одобрить</button>
+  </form>
+  <form method="post" action="/review/{{ sub.id }}/reject" style="display:inline;margin-left:0.5rem"
+        onsubmit="return confirm('Отклонить отзыв #{{ sub.id }}?');">
+    <button type="submit">Отклонить</button>
+  </form>
+</div>
 {% else %}
-<p>Нет отзывов на проверке по этому сервису.</p>
-{% endif %}
+<p>Нет отзывов в очереди{% if cooldown %} ({{ cooldown }} ещё на кулдауне){% endif %}.</p>
+{% endfor %}
+
 <p><a href="/review">← К сервисам</a></p>
 {% endblock %}
