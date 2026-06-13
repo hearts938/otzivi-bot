@@ -4,7 +4,7 @@ import asyncio
 import logging
 from datetime import datetime
 
-from sqlalchemy import update
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from database.models import TaskText
@@ -13,19 +13,32 @@ logger = logging.getLogger(__name__)
 
 
 async def activate_due_texts(session: AsyncSession) -> int:
+    """Опубликовать тексты с наступившей датой, если такого текста ещё нет у заказчика."""
+    from repo import task_text_body_exists
+
     now = datetime.utcnow()
-    res = await session.execute(
-        update(TaskText)
-        .where(
+    r = await session.execute(
+        select(TaskText).where(
             TaskText.publish_at.is_not(None),
             TaskText.publish_at <= now,
             TaskText.published.is_(False),
             TaskText.taken_by_user_id.is_(None),
         )
-        .values(published=True)
     )
-    await session.commit()
-    return res.rowcount or 0
+    activated = 0
+    skipped = 0
+    for tt in r.scalars().all():
+        if await task_text_body_exists(session, tt.task_id, tt.body, exclude_id=tt.id):
+            tt.publish_at = None
+            skipped += 1
+            continue
+        tt.published = True
+        activated += 1
+    if activated or skipped:
+        await session.commit()
+    if skipped:
+        logger.info("Пропущено дубликатов при публикации: %s", skipped)
+    return activated
 
 
 async def publish_scheduler_loop(session_factory: async_sessionmaker[AsyncSession]) -> None:

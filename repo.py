@@ -1037,12 +1037,18 @@ async def task_text_body_exists(
     session: AsyncSession,
     task_id: int,
     body: str,
+    *,
+    exclude_id: int | None = None,
 ) -> bool:
+    """Есть ли у заказчика другой текст с таким же содержимым (любой статус)."""
     from services.texts_import import import_body_key
 
     key = import_body_key(body)
-    existing = await load_task_text_bodies_normalized(session, task_id)
-    return key in existing
+    q = select(TaskText.id, TaskText.body).where(TaskText.task_id == task_id)
+    if exclude_id is not None:
+        q = q.where(TaskText.id != exclude_id)
+    r = await session.execute(q)
+    return any(import_body_key(b) == key for _tid, b in r.all())
 
 
 async def next_text_number(session: AsyncSession, task_id: int) -> int:
@@ -1190,7 +1196,9 @@ async def import_review_texts(
         if task.id not in body_cache:
             body_cache[task.id] = await load_task_text_bodies_normalized(session, task.id)
         body_key = import_body_key(item.body)
-        if body_key in body_cache[task.id]:
+        if body_key in body_cache[task.id] or await task_text_body_exists(
+            session, task.id, item.body
+        ):
             errors.append(
                 f"№{item.text_number}: такой текст уже был у заказчика «{task.customer_name}», пропуск."
             )
@@ -1245,7 +1253,9 @@ async def import_review_texts_to_task(
             notes.append(f"№{item.text_number}: номер уже есть.")
             continue
         body_key = import_body_key(item.body)
-        if body_key in body_cache:
+        if body_key in body_cache or await task_text_body_exists(
+            session, task_id, item.body
+        ):
             notes.append(f"№{item.text_number}: такой текст уже был у этого заказчика, пропуск.")
             continue
         published = item.publish_at <= now
