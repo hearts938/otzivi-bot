@@ -61,6 +61,7 @@ from repo import (
     get_task,
     get_user_by_telegram,
     get_user_claimed_text,
+    user_can_take_customer_task,
     user_refused_text,
     list_platforms_available_for_user,
     user_platform_recharge_until,
@@ -432,11 +433,10 @@ async def _open_task_assignment(
         if not t or not t.active:
             await message.answer("Задание недоступно.", reply_markup=user_main_kb())
             return False
-        sub = await get_submission_for_user_task(session, u.id, task_id)
-        if sub:
+        if not await user_can_take_customer_task(session, u.id, t):
             await message.answer(
-                "Вы уже выполняли задание этого заказчика. "
-                "Повторно взять его нельзя.",
+                "Вы уже выполняли задание для этого заказчика "
+                "(отзыв по этой ссылке уже отправлялся). Повторно взять нельзя.",
                 reply_markup=user_main_kb(),
             )
             return False
@@ -666,7 +666,10 @@ async def msg_done(message: Message, session_factory: async_sessionmaker[AsyncSe
             return
         sub = await create_submission(session, u.id, tid, claimed.body, task_text_id=claimed.id)
     if not sub:
-        await message.answer("Уже отправлено на проверку.", reply_markup=user_main_kb())
+        await message.answer(
+            "Не удалось отправить отзыв: задание для этого заказчика уже выполнялось ранее.",
+            reply_markup=user_main_kb(),
+        )
         return
     if sub.status == SubmissionStatus.COOLDOWN and sub.cooldown_until:
         await message.answer(

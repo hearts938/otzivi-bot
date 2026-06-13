@@ -73,6 +73,8 @@ BTN_YM_QUIZ_LIST = "📋 Пул вопросов"
 BTN_APPROVED_EXPORT_7 = "📥 Excel 7 дней"
 BTN_APPROVED_EXPORT_30 = "📥 Excel 30 дней"
 BTN_APPROVED_EXPORT_RANGE = "📥 Excel за период"
+BTN_APPROVED_ALL_PLATFORMS = "🌐 Все сервисы"
+BTN_APPROVED_ALL_TASKS = "📋 Все заказчики"
 
 ADMIN_MAIN_BUTTONS = frozenset({
     BTN_ADMIN_HOME,
@@ -106,6 +108,8 @@ ADMIN_MAIN_BUTTONS = frozenset({
     BTN_APPROVED_EXPORT_7,
     BTN_APPROVED_EXPORT_30,
     BTN_APPROVED_EXPORT_RANGE,
+    BTN_APPROVED_ALL_PLATFORMS,
+    BTN_APPROVED_ALL_TASKS,
     BTN_BALANCE_CREDIT,
     BTN_BALANCE_DEBIT,
 })
@@ -538,6 +542,35 @@ def parse_review_task(text: str | None) -> int | None:
         return None
     try:
         return int(text.rsplit("·#rv", 1)[1])
+    except ValueError:
+        return None
+
+
+def approved_platform_label(platform_id: int, name: str, count: int) -> str:
+    return f"🌐 {name[:28]} ({count}) ·#apf{platform_id}"
+
+
+def parse_approved_platform(text: str | None) -> int | None:
+    text = _btn_text(text)
+    if not text or "·#apf" not in text or not text.startswith("🌐"):
+        return None
+    try:
+        return int(text.rsplit("·#apf", 1)[1])
+    except ValueError:
+        return None
+
+
+def approved_task_label(task_id: int, name: str, count: int) -> str:
+    short = (name or f"Заказчик {task_id}")[:30]
+    return f"📋 {short} ({count}) ·#atk{task_id}"
+
+
+def parse_approved_task(text: str | None) -> int | None:
+    text = _btn_text(text)
+    if not text or "·#atk" not in text or not text.startswith("📋"):
+        return None
+    try:
+        return int(text.rsplit("·#atk", 1)[1])
     except ValueError:
         return None
 

@@ -84,6 +84,8 @@ class AdminPayoutsBrowse(StatesGroup):
 class AdminApprovedExportFSM(StatesGroup):
     date_from = State()
     date_to = State()
+    platform_pick = State()
+    task_pick = State()
 
 
 class YandexQuizFSM(StatesGroup):

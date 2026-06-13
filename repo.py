@@ -523,6 +523,61 @@ async def list_all_tasks(session: AsyncSession) -> list[Task]:
     return list(r.scalars().unique().all())
 
 
+def normalize_task_link(link: str | None) -> str:
+    s = (link or "").strip()
+    if not s:
+        return ""
+    return s.rstrip("/").casefold()
+
+
+def normalize_customer_name(name: str | None) -> str:
+    return (name or "").strip().casefold()
+
+
+async def get_user_completed_customer_blocks(
+    session: AsyncSession, user_id: int
+) -> tuple[set[str], set[str]]:
+    """Ссылки и заказчики, по которым пользователь уже отправлял отзыв."""
+    r = await session.execute(
+        select(Task.link, Task.customer_name, Task.title)
+        .join(Submission, Submission.task_id == Task.id)
+        .where(Submission.user_id == user_id)
+    )
+    links: set[str] = set()
+    customers: set[str] = set()
+    for link, customer_name, title in r.all():
+        lk = normalize_task_link(link)
+        if lk:
+            links.add(lk)
+        cn = normalize_customer_name(customer_name or title)
+        if cn:
+            customers.add(cn)
+    return links, customers
+
+
+def task_blocked_by_completed_work(
+    task: Task,
+    blocked_links: set[str],
+    blocked_customers: set[str],
+) -> bool:
+    lk = normalize_task_link(task.link)
+    if lk and lk in blocked_links:
+        return True
+    cn = normalize_customer_name(task.customer_name or task.title)
+    if cn and cn in blocked_customers:
+        return True
+    return False
+
+
+async def user_can_take_customer_task(
+    session: AsyncSession, user_id: int, task: Task
+) -> bool:
+    blocked_links, blocked_customers = await get_user_completed_customer_blocks(
+        session, user_id
+    )
+    return not task_blocked_by_completed_work(task, blocked_links, blocked_customers)
+
+
 async def list_tasks_available_for_user(
     session: AsyncSession, user_id: int, gender: str | None
 ) -> list[Task]:
@@ -530,7 +585,8 @@ async def list_tasks_available_for_user(
     Задания, которые пользователь может взять сейчас:
     — есть свободный опубликованный текст под его пол;
     — или он уже взял текст, но ещё не отправил отзыв.
-    Заказчик недоступен, если пользователь хоть раз отправлял отзыв по нему.
+    Недоступны заказчики/ссылки, по которым пользователь уже отправлял отзыв.
+    Отказ от текста без отправки отзыва заказчика не блокирует.
     """
     if not gender:
         return []
@@ -542,11 +598,8 @@ async def list_tasks_available_for_user(
             continue
         if await user_platform_in_recharge(session, user_id, int(pid)):
             recharge_platforms.add(int(pid))
-    has_submission = exists(
-        select(1).where(
-            Submission.user_id == user_id,
-            Submission.task_id == Task.id,
-        )
+    blocked_links, blocked_customers = await get_user_completed_customer_blocks(
+        session, user_id
     )
     has_claimed = exists(
         select(1).where(
@@ -575,12 +628,15 @@ async def list_tasks_available_for_user(
         .options(selectinload(Task.platform))
         .where(
             Task.active.is_(True),
-            ~has_submission,
             or_(has_claimed, has_free_text),
         )
         .order_by(Task.id.desc())
     )
-    tasks = list(r.scalars().unique().all())
+    tasks = [
+        t
+        for t in r.scalars().unique().all()
+        if not task_blocked_by_completed_work(t, blocked_links, blocked_customers)
+    ]
     if not recharge_platforms:
         return tasks
     r_claimed = await session.execute(
@@ -1543,6 +1599,8 @@ async def create_submission(
     )
     t = task.scalar_one_or_none()
     if not t:
+        return None
+    if not await user_can_take_customer_task(session, user_id, t):
         return None
     cd_sec = t.platform.cooldown_seconds if t.platform else 0
     until = compute_cooldown_until(cd_sec)

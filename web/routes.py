@@ -79,6 +79,8 @@ from services.admin_stats import list_platforms, platform_snapshot, user_activit
 from services.approved_reviews import (
     build_approved_reviews_xlsx,
     fetch_approved_review_stats,
+    list_approved_review_platforms,
+    list_approved_review_tasks,
     list_approved_reviews,
     parse_admin_date,
     utc_now_in_tz,
@@ -992,10 +994,26 @@ async def approved_reviews_get(request: Request):
     today = utc_now_in_tz(settings.app_timezone).date()
     default_from = (today - timedelta(days=29)).strftime("%d.%m.%Y")
     default_to = today.strftime("%d.%m.%Y")
+
+    def _opt_int(key: str) -> int | None:
+        raw = (qp.get(key) or "").strip()
+        if not raw:
+            return None
+        try:
+            return int(raw)
+        except ValueError:
+            return None
+
+    selected_platform_id = _opt_int("platform_id")
+    selected_task_id = _opt_int("task_id")
     async with _sf(request)() as session:
         stats = await fetch_approved_review_stats(session, tz_name=settings.app_timezone)
         preview = await list_approved_reviews(
             session, tz_name=settings.app_timezone, limit=20
+        )
+        platforms = await list_approved_review_platforms(session)
+        tasks = await list_approved_review_tasks(
+            session, platform_id=selected_platform_id
         )
     preview_rows = [
         {
@@ -1008,6 +1026,17 @@ async def approved_reviews_get(request: Request):
         }
         for row in preview
     ]
+    platform_options = [
+        {"id": p.id, "name": p.name, "count": cnt} for p, cnt in platforms
+    ]
+    task_options = [
+        {
+            "id": t.id,
+            "name": (t.customer_name or t.title or f"#{t.id}").strip(),
+            "count": cnt,
+        }
+        for t, cnt in tasks
+    ]
     return templates.TemplateResponse(
         "approved_reviews.html",
         {
@@ -1017,6 +1046,10 @@ async def approved_reviews_get(request: Request):
             "timezone": settings.app_timezone,
             "date_from": qp.get("date_from") or default_from,
             "date_to": qp.get("date_to") or default_to,
+            "platforms": platform_options,
+            "tasks": task_options,
+            "selected_platform_id": selected_platform_id,
+            "selected_task_id": selected_task_id,
             "err": qp.get("err"),
         },
     )
@@ -1036,20 +1069,39 @@ async def approved_reviews_export(request: Request):
             "/approved-reviews?err=" + quote("Укажите даты в формате ДД.ММ.ГГГГ"),
             status_code=303,
         )
+
+    def _opt_int(key: str) -> int | None:
+        raw = (qp.get(key) or "").strip()
+        if not raw:
+            return None
+        try:
+            return int(raw)
+        except ValueError:
+            return None
+
+    platform_id = _opt_int("platform_id")
+    task_id = _opt_int("task_id")
     async with _sf(request)() as session:
         rows = await list_approved_reviews(
             session,
             date_from=d_from,
             date_to=d_to,
+            platform_id=platform_id,
+            task_id=task_id,
             tz_name=settings.app_timezone,
         )
     if not rows:
         return RedirectResponse(
-            "/approved-reviews?err=" + quote("За выбранный период отзывов нет"),
+            "/approved-reviews?err=" + quote("За выбранный период и фильтры отзывов нет"),
             status_code=303,
         )
     xlsx = build_approved_reviews_xlsx(rows, tz_name=settings.app_timezone)
-    fname = f"approved_{d_from.strftime('%Y%m%d')}_{d_to.strftime('%Y%m%d')}.xlsx"
+    fname = f"approved_{d_from.strftime('%Y%m%d')}_{d_to.strftime('%Y%m%d')}"
+    if platform_id is not None:
+        fname += f"_pf{platform_id}"
+    if task_id is not None:
+        fname += f"_tk{task_id}"
+    fname += ".xlsx"
     return Response(
         content=xlsx,
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",

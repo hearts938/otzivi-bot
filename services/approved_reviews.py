@@ -145,17 +145,51 @@ async def fetch_approved_review_stats(
     return ApprovedReviewStats(total=total, today=today_n, last_7_days=d7, last_30_days=d30)
 
 
+async def list_approved_review_platforms(
+    session: AsyncSession,
+) -> list[tuple[Platform, int]]:
+    r = await session.execute(
+        select(Platform, func.count(Submission.id))
+        .join(Task, Task.platform_id == Platform.id)
+        .join(Submission, Submission.task_id == Task.id)
+        .where(Submission.status == SubmissionStatus.APPROVED)
+        .group_by(Platform.id)
+        .order_by(Platform.name.asc())
+    )
+    return [(p, int(cnt)) for p, cnt in r.all()]
+
+
+async def list_approved_review_tasks(
+    session: AsyncSession,
+    *,
+    platform_id: int | None = None,
+) -> list[tuple[Task, int]]:
+    q = (
+        select(Task, func.count(Submission.id))
+        .join(Submission, Submission.task_id == Task.id)
+        .where(Submission.status == SubmissionStatus.APPROVED)
+    )
+    if platform_id is not None:
+        q = q.where(Task.platform_id == platform_id)
+    q = q.group_by(Task.id).order_by(Task.customer_name.asc(), Task.title.asc())
+    r = await session.execute(q)
+    return [(t, int(cnt)) for t, cnt in r.all()]
+
+
 async def list_approved_reviews(
     session: AsyncSession,
     *,
     date_from: date | None = None,
     date_to: date | None = None,
+    platform_id: int | None = None,
+    task_id: int | None = None,
     tz_name: str = "Europe/Moscow",
     limit: int = 5000,
 ) -> list[ApprovedReviewRow]:
     ts = _approval_ts()
     q = (
         select(Submission)
+        .join(Task, Task.id == Submission.task_id)
         .where(Submission.status == SubmissionStatus.APPROVED)
         .options(
             selectinload(Submission.user),
@@ -167,6 +201,10 @@ async def list_approved_reviews(
     if date_from and date_to:
         start, end = day_range_to_utc(date_from, date_to, tz_name)
         q = q.where(ts >= start, ts <= end)
+    if platform_id is not None:
+        q = q.where(Task.platform_id == platform_id)
+    if task_id is not None:
+        q = q.where(Submission.task_id == task_id)
     r = await session.execute(q)
     return [_row_from_submission(s) for s in r.scalars().unique().all()]
 

@@ -14,7 +14,7 @@
 </ul>
 
 <h2>Выгрузка Excel</h2>
-<p>Колонки: дата одобрения, город, пол, текст, ссылка.</p>
+<p>Колонки: дата одобрения, город, пол, текст, ссылка. Можно ограничить выборку по сервису и/или заказчику.</p>
 <form method="get" action="/approved-reviews/export">
   <div>
     <label>С даты <input name="date_from" value="{{ date_from }}" placeholder="01.03.2026" required/></label>
@@ -22,7 +22,31 @@
   <div>
     <label>По дату <input name="date_to" value="{{ date_to }}" placeholder="31.03.2026" required/></label>
   </div>
-  <button type="submit">Скачать .xlsx</button>
+  <div>
+    <label>Сервис
+      <select name="platform_id" onchange="this.form.action='/approved-reviews'; this.form.method='get'; this.form.submit();">
+        <option value="">Все сервисы</option>
+        {% for p in platforms %}
+        <option value="{{ p.id }}" {% if selected_platform_id == p.id %}selected{% endif %}>
+          {{ p.name }} ({{ p.count }})
+        </option>
+        {% endfor %}
+      </select>
+    </label>
+  </div>
+  <div>
+    <label>Заказчик
+      <select name="task_id">
+        <option value="">Все заказчики</option>
+        {% for t in tasks %}
+        <option value="{{ t.id }}" {% if selected_task_id == t.id %}selected{% endif %}>
+          {{ t.name }} ({{ t.count }})
+        </option>
+        {% endfor %}
+      </select>
+    </label>
+  </div>
+  <button type="submit" onclick="this.form.action='/approved-reviews/export'; this.form.method='get';">Скачать .xlsx</button>
 </form>
 
 <h2>Последние 20</h2>
