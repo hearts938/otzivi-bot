@@ -695,6 +695,11 @@ INCOMPLETE_YM_STEPS = frozenset({
     "quiz_intro",
     "question",
 })
+YM_FROZEN_STEP = "frozen"
+YM_AWAIT_REVIEW_MSG = (
+    "Вы уже прошли тест по Яндекс Картам. "
+    "Дождитесь сообщения с текстом отзыва — новое задание пока недоступно."
+)
 
 
 async def get_active_ym_session(session: AsyncSession, user_id: int) -> YandexMapsSession | None:
@@ -708,6 +713,13 @@ async def get_active_ym_session(session: AsyncSession, user_id: int) -> YandexMa
     if not row or row.review_sent_at or row.step == "done":
         return None
     return row
+
+
+async def user_ym_awaiting_review(session: AsyncSession, user_id: int) -> YandexMapsSession | None:
+    ym = await get_active_ym_session(session, user_id)
+    if ym and ym.step == YM_FROZEN_STEP:
+        return ym
+    return None
 
 
 async def task_platform_is_yandex(session: AsyncSession, task_id: int | None) -> bool:
@@ -735,6 +747,9 @@ async def save_ym_session(session: AsyncSession, row: YandexMapsSession) -> Yand
 
 
 async def start_ym_session(session: AsyncSession, user_id: int, step: str) -> YandexMapsSession:
+    existing = await user_ym_awaiting_review(session, user_id)
+    if existing:
+        return existing
     await clear_ym_session(session, user_id)
     row = YandexMapsSession(user_id=user_id, step=step)
     session.add(row)
@@ -832,6 +847,8 @@ async def claim_yandex_assignment(
     region: str,
     platform_id: int,
 ) -> tuple[Task | None, TaskText | None]:
+    if await user_ym_awaiting_review(session, user_id):
+        return None, None
     region_norm = (region or "").strip().lower()
     tasks = await list_tasks_available_for_user_on_platform(
         session, user_id, gender, platform_id

@@ -9,7 +9,7 @@ from database.models import User
 from handlers.admin.common import is_admin
 from handlers.formatting import main_menu_text
 from handlers.keyboards import user_main_kb
-from repo import clear_ym_session, ensure_user
+from repo import ensure_user, reset_incomplete_ym_flow
 
 
 async def send_main_menu(message: Message, user: User, settings: Settings | None = None) -> None:
@@ -45,5 +45,5 @@ async def return_to_main_menu(
             first_name=message.from_user.first_name,
             last_name=message.from_user.last_name,
         )
-        await clear_ym_session(session, u.id)
+        await reset_incomplete_ym_flow(session, u.id)
     await send_main_menu(message, u, settings)

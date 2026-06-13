@@ -16,6 +16,7 @@
     <strong>Имя на площадке:</strong> {{ sub.user.platform_account_name or '—' }}<br/>
     <strong>Пол:</strong> {{ sub.gender_label }}<br/>
     <strong>Выполнено:</strong> {{ sub.done_at }}
+    {% if sub.task_link %}<br/><strong>Ссылка:</strong> <a href="{{ sub.task_link }}" target="_blank" rel="noopener">{{ sub.task_link }}</a>{% endif %}
   </p>
   <pre style="white-space:pre-wrap;background:#f5f5f5;padding:0.75rem">{{ sub.review_text }}</pre>
   <form method="post" action="/review/{{ sub.id }}/approve" style="display:inline">

@@ -30,6 +30,13 @@ def _yandex_quiz_freeze_minutes() -> int:
     return max(0, hours * 60)
 
 
+def _normalize_smtp_password(raw: str) -> str:
+    pw = (raw or "").strip()
+    if len(pw) >= 2 and pw[0] == pw[-1] and pw[0] in "\"'":
+        pw = pw[1:-1].strip()
+    return pw.replace(" ", "")
+
+
 @dataclass(frozen=True)
 class Settings:
     bot_token: str
@@ -89,7 +96,7 @@ def get_settings() -> Settings:
         smtp_host=os.getenv("SMTP_HOST", "").strip(),
         smtp_port=int(os.getenv("SMTP_PORT", "587")),
         smtp_user=os.getenv("SMTP_USER", "").strip(),
-        smtp_password=os.getenv("SMTP_PASSWORD", "").replace(" ", "").strip(),
+        smtp_password=_normalize_smtp_password(os.getenv("SMTP_PASSWORD", "")),
         smtp_from=os.getenv("SMTP_FROM", "").strip() or os.getenv("SMTP_USER", "").strip(),
         web_session_secret=web_secret,
         web_host=os.getenv("WEB_HOST", "0.0.0.0"),
@@ -103,7 +110,7 @@ def get_settings() -> Settings:
         payments_api_base_url=os.getenv("PAYMENTS_API_BASE_URL", "https://api-payments.konsol.pro").strip(),
         payments_api_auth=_normalize_bearer_auth(os.getenv("PAYMENTS_API_AUTH", "")),
         payments_api_timeout_seconds=int(os.getenv("PAYMENTS_API_TIMEOUT_SECONDS", "20")),
-        min_withdrawal_amount=float(os.getenv("MIN_WITHDRAWAL_AMOUNT", "500")),
+        min_withdrawal_amount=float(os.getenv("MIN_WITHDRAWAL_AMOUNT", "200")),
         reviews_stock_report_hour=int(os.getenv("REVIEWS_STOCK_REPORT_HOUR", "22")),
         reviews_stock_report_minute=int(os.getenv("REVIEWS_STOCK_REPORT_MINUTE", "0")),
     )

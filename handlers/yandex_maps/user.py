@@ -52,10 +52,12 @@ from repo import (
     get_yandex_conditions,
     release_task_text,
     release_ym_assignment,
+    reset_incomplete_ym_flow,
     save_ym_session,
     start_ym_session,
     task_platform_is_yandex,
     user_is_banned_now,
+    YM_AWAIT_REVIEW_MSG,
 )
 from services.yandex_maps import (
     YANDEX_QUIZ_POOL_SIZE,
@@ -118,11 +120,7 @@ async def ym_platform_entry(
             return
         ym = await get_active_ym_session(session, u.id)
         if ym and ym.step == "frozen":
-            await message.answer(
-                "Вы уже прошли тест по Яндекс Картам. "
-                "Дождитесь сообщения с текстом отзыва.",
-                reply_markup=user_main_kb(),
-            )
+            await message.answer(YM_AWAIT_REVIEW_MSG, reply_markup=user_main_kb())
             return
         cond = await get_yandex_conditions(session)
         await start_ym_session(session, u.id, "conditions")
@@ -434,7 +432,7 @@ async def ym_website(
             u = await ensure_user(
                 session, message.from_user.id, message.from_user.username, referred_by_id=None
             )
-            await clear_ym_session(session, u.id)
+            await reset_incomplete_ym_flow(session, u.id)
         await _send_platform_list(message, session_factory, state)
         return
     if len(url) < 8 or not url.startswith(("http://", "https://")):
@@ -649,10 +647,4 @@ async def ym_back_platforms(
 ):
     from handlers.user_handlers import _send_platform_list
 
-    await state.clear()
-    async with session_factory() as session:
-        u = await ensure_user(
-            session, message.from_user.id, message.from_user.username, referred_by_id=None
-        )
-        await clear_ym_session(session, u.id)
     await _send_platform_list(message, session_factory, state)

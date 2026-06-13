@@ -838,6 +838,7 @@ async def review_platform(request: Request, platform_id: int):
                     if sub.task
                     else "—"
                 ),
+                "task_link": (sub.task.link or "").strip() if sub.task else "",
             }
         )
     return templates.TemplateResponse(
@@ -874,6 +875,7 @@ async def review_task(request: Request, task_id: int):
                 "gender_label": gender_label(sub.user.gender if sub.user else None),
                 "review_text": sub.review_text or "",
                 "done_at": done.strftime("%d.%m.%Y %H:%M") if done else "—",
+                "task_link": (task.link or "").strip() if task else "",
             }
         )
     return templates.TemplateResponse(

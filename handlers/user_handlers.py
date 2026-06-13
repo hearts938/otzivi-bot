@@ -76,6 +76,8 @@ from repo import (
     list_user_withdrawals,
     update_withdrawal_request_status,
     reset_incomplete_ym_flow,
+    user_ym_awaiting_review,
+    YM_AWAIT_REVIEW_MSG,
 )
 from handlers.admin.common import is_admin
 from repo import user_is_banned_now
@@ -343,6 +345,7 @@ async def _send_platform_list(
             last_name=message.from_user.last_name,
         )
         await reset_incomplete_ym_flow(session, u.id)
+        awaiting = await user_ym_awaiting_review(session, u.id)
         rows = await list_platforms_available_for_user(session, u.id, u.gender)
     if not rows:
         await message.answer(
@@ -352,8 +355,11 @@ async def _send_platform_list(
         )
         return
     labels = [user_platform_pick_label(p.id, p.name, cnt) for p, cnt in rows]
+    extra = ""
+    if awaiting:
+        extra = f"\n\n{YM_AWAIT_REVIEW_MSG}"
     await message.answer(
-        tasks_menu_entry_text(len(rows), claim_minutes=settings.task_claim_minutes),
+        tasks_menu_entry_text(len(rows), claim_minutes=settings.task_claim_minutes) + extra,
         reply_markup=user_platforms_kb(labels),
         parse_mode="HTML",
     )

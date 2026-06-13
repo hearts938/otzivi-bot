@@ -111,6 +111,14 @@ def _reviews_channel_line(url: str) -> str:
     return f'<a href="https://t.me/{safe_handle}">{label}</a>'
 
 
+def task_link_html(link: str | None) -> str:
+    raw = (link or "").strip()
+    if not raw:
+        return "—"
+    safe = esc_html(raw)
+    return f'<a href="{safe}">{safe}</a>'
+
+
 def profile_text(
     u: User,
     *,
@@ -300,7 +308,7 @@ def admin_submission_review_text(sub, task) -> str:
         f"Имя на площадке: {esc_html(u.platform_account_name or '—')}\n"
         f"Пол: {gender_label(u.gender)}"
     )
-    task_info = f"<b>{name}</b>\n{esc_html(task.link or '—')}"
+    task_info = f"<b>{name}</b>\nСсылка: {task_link_html(task.link)}"
     return (
         f"📝 <b>Отзыв на проверке #{sub.id}</b>\n\n"
         f"{section_rich('Исполнитель', executor)}\n\n"
